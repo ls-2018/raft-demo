@@ -2,6 +2,7 @@ package raftboltdb
 
 import (
 	"os"
+	raftbench "raft-demo/raft/bench"
 	"testing"
 )
 

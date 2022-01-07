@@ -39,7 +39,7 @@ dep-linter:
 	curl -sfL https://install.goreleaser.com/github.com/golangci/golangci-lint.sh | sh -s -- -b $(ENV)/bin $(GOLANG_CI_VERSION)
 
 cov:
-	INTEG_TESTS=yes gocov test github.com/hashicorp/raft | gocov-html > /tmp/coverage.html
+	INTEG_TESTS=yes gocov test ./... | gocov-html > /tmp/coverage.html
 	open /tmp/coverage.html
 
 .PHONY: test cov integ deps dep-linter lint
