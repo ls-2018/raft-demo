@@ -3,9 +3,6 @@ package raft
 import (
 	"fmt"
 	"io"
-	"time"
-
-	"github.com/armon/go-metrics"
 )
 
 // FSM provides an interface that can be implemented by
@@ -80,9 +77,7 @@ func (r *Raft) runFSM() {
 
 		switch req.log.Type {
 		case LogCommand:
-			start := time.Now()
 			resp = r.fsm.Apply(req.log)
-			metrics.MeasureSince([]string{"raft", "fsm", "apply"}, start)
 
 		case LogConfiguration:
 			if !configStoreEnabled {
@@ -91,9 +86,7 @@ func (r *Raft) runFSM() {
 				return
 			}
 
-			start := time.Now()
 			configStore.StoreConfiguration(req.log.Index, DecodeConfiguration(req.log.Data))
-			metrics.MeasureSince([]string{"raft", "fsm", "store_config"}, start)
 		}
 
 		// Update the indexes
@@ -131,10 +124,7 @@ func (r *Raft) runFSM() {
 
 		var responses []interface{}
 		if len(sendLogs) > 0 {
-			start := time.Now()
 			responses = batchingFSM.ApplyBatch(sendLogs)
-			metrics.MeasureSince([]string{"raft", "fsm", "applyBatch"}, start)
-			metrics.AddSample([]string{"raft", "fsm", "applyBatchNum"}, float32(len(reqs)))
 
 			// Ensure we get the expected responses
 			if len(sendLogs) != len(responses) {
@@ -191,9 +181,7 @@ func (r *Raft) runFSM() {
 		}
 
 		// Start a snapshot
-		start := time.Now()
 		snap, err := r.fsm.Snapshot()
-		metrics.MeasureSince([]string{"raft", "fsm", "snapshot"}, start)
 
 		// Respond to the request
 		req.index = lastIndex
@@ -229,12 +217,8 @@ func (r *Raft) runFSM() {
 // and report timing metrics. The caller is still responsible for calling Close
 // on the source in all cases.
 func fsmRestoreAndMeasure(fsm FSM, source io.ReadCloser) error {
-	start := time.Now()
 	if err := fsm.Restore(source); err != nil {
 		return err
 	}
-	metrics.MeasureSince([]string{"raft", "fsm", "restore"}, start)
-	metrics.SetGauge([]string{"raft", "fsm", "lastRestoreDuration"},
-		float32(time.Since(start).Milliseconds()))
 	return nil
 }

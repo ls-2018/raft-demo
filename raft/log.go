@@ -3,8 +3,6 @@ package raft
 import (
 	"fmt"
 	"time"
-
-	metrics "github.com/armon/go-metrics"
 )
 
 // LogType 描述了各种类型的日志条目。
@@ -158,12 +156,7 @@ func emitLogStoreMetrics(s LogStore, prefix []string, interval time.Duration, st
 		select {
 		case <-time.After(interval):
 			// In error case emit 0 as the age
-			ageMs := float32(0.0)
-			l, err := oldestLog(s)
-			if err == nil && !l.AppendedAt.IsZero() {
-				ageMs = float32(time.Since(l.AppendedAt).Milliseconds())
-			}
-			metrics.SetGauge(append(prefix, "oldestLogAge"), ageMs)
+			oldestLog(s)
 		case <-stopCh:
 			return
 		}

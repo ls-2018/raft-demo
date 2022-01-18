@@ -3,9 +3,6 @@ package raft
 import (
 	"fmt"
 	"io"
-	"time"
-
-	"github.com/armon/go-metrics"
 )
 
 // SnapshotMeta is for metadata of a snapshot.
@@ -120,7 +117,6 @@ func (r *Raft) shouldSnapshot() bool {
 // the snapshot thread, never the main thread. This returns the ID of the new
 // snapshot, along with an error.
 func (r *Raft) takeSnapshot() (string, error) {
-	defer metrics.MeasureSince([]string{"raft", "snapshot", "takeSnapshot"}, time.Now())
 
 	// Create a request for the FSM to perform a snapshot.
 	snapReq := &reqSnapshotFuture{}
@@ -174,21 +170,17 @@ func (r *Raft) takeSnapshot() (string, error) {
 
 	// Create a new snapshot.
 	r.logger.Info("starting snapshot up to", "index", snapReq.index)
-	start := time.Now()
 	version := getSnapshotVersion(r.protocolVersion)
 	sink, err := r.snapshots.Create(version, snapReq.index, snapReq.term, committed, committedIndex, r.trans)
 	if err != nil {
 		return "", fmt.Errorf("failed to create snapshot: %v", err)
 	}
-	metrics.MeasureSince([]string{"raft", "snapshot", "create"}, start)
 
 	// Try to persist the snapshot.
-	start = time.Now()
 	if err := snapReq.snapshot.Persist(sink); err != nil {
 		sink.Cancel()
 		return "", fmt.Errorf("failed to persist snapshot: %v", err)
 	}
-	metrics.MeasureSince([]string{"raft", "snapshot", "persist"}, start)
 
 	// Close and check for error.
 	if err := sink.Close(); err != nil {
@@ -210,7 +202,6 @@ func (r *Raft) takeSnapshot() (string, error) {
 // compactLogs takes the last inclusive index of a snapshot
 // and trims the logs that are no longer needed.
 func (r *Raft) compactLogs(snapIdx uint64) error {
-	defer metrics.MeasureSince([]string{"raft", "compactLogs"}, time.Now())
 	// Determine log ranges to compact
 	minLog, err := r.logs.FirstIndex()
 	if err != nil {

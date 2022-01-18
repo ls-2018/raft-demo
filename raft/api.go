@@ -10,7 +10,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	metrics "github.com/armon/go-metrics"
 	hclog "github.com/hashicorp/go-hclog"
 )
 
@@ -721,19 +720,15 @@ func (r *Raft) Leader() ServerAddress {
 	return leader
 }
 
-// Apply is used to apply a command to the FSM in a highly consistent
-// manner. This returns a future that can be used to wait on the application.
-// An optional timeout can be provided to limit the amount of time we wait
-// for the command to be started. This must be run on the leader or it
-// will fail.
+// Apply 是用来以高度一致的方式将命令应用于FSM。这将返回一个可以用来等待应用程序的Future。
+// 可以提供一个可选的超时来限制我们等待命令启动的时间。这必须在leader上运行，否则会失败。
 func (r *Raft) Apply(cmd []byte, timeout time.Duration) ApplyFuture {
+	// 将二进制数据封装成 Log
 	return r.ApplyLog(Log{Data: cmd}, timeout)
 }
 
-// ApplyLog performs Apply but takes in a Log directly. The only values
-// currently taken from the submitted Log are Data and Extensions.
+// ApplyLog 执行Apply，但直接接收Log。目前从提交的日志中获取的唯一数值是数据和扩展。
 func (r *Raft) ApplyLog(log Log, timeout time.Duration) ApplyFuture {
-	metrics.IncrCounter([]string{"raft", "apply"}, 1)
 
 	var timer <-chan time.Time
 	if timeout > 0 {
@@ -766,7 +761,6 @@ func (r *Raft) ApplyLog(log Log, timeout time.Duration) ApplyFuture {
 // limit the amount of time we wait for the command to be started. This
 // must be run on the leader or it will fail.
 func (r *Raft) Barrier(timeout time.Duration) Future {
-	metrics.IncrCounter([]string{"raft", "barrier"}, 1)
 	var timer <-chan time.Time
 	if timeout > 0 {
 		timer = time.After(timeout)
@@ -794,7 +788,6 @@ func (r *Raft) Barrier(timeout time.Duration) Future {
 // the leader. This can be done to prevent stale reads when a
 // new leader has potentially been elected.
 func (r *Raft) VerifyLeader() Future {
-	metrics.IncrCounter([]string{"raft", "verify_leader"}, 1)
 	verifyFuture := &verifyFuture{}
 	verifyFuture.init()
 	select {
@@ -965,7 +958,6 @@ func (r *Raft) Snapshot() SnapshotFuture {
 // the leader commits ahead of its followers, so should only be used for disaster
 // recovery into a fresh cluster, and should not be used in normal operations.
 func (r *Raft) Restore(meta *SnapshotMeta, reader io.Reader, timeout time.Duration) error {
-	metrics.IncrCounter([]string{"raft", "restore"}, 1)
 	var timer <-chan time.Time
 	if timeout > 0 {
 		timer = time.After(timeout)

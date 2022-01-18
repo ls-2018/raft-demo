@@ -6,8 +6,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"github.com/armon/go-metrics"
 )
 
 const (
@@ -334,17 +332,12 @@ func (r *Raft) sendLatestSnapshot(s *followerReplication) (bool, error) {
 	s.peerLock.RUnlock()
 
 	// Make the call
-	start := time.Now()
 	var resp InstallSnapshotResponse
 	if err := r.trans.InstallSnapshot(peer.ID, peer.Address, &req, &resp, snapshot); err != nil {
 		r.logger.Error("failed to install snapshot", "id", snapID, "error", err)
 		s.failures++
 		return false, err
 	}
-	labels := []metrics.Label{{Name: "peer_id", Value: string(peer.ID)}}
-	metrics.MeasureSinceWithLabels([]string{"raft", "replication", "installSnapshot"}, start, labels)
-	// Duplicated information. Kept for backward compatibility.
-	metrics.MeasureSince([]string{"raft", "replication", "installSnapshot", string(peer.ID)}, start)
 
 	// Check for a newer term, stop running
 	if resp.Term > req.Term {
@@ -397,7 +390,6 @@ func (r *Raft) heartbeat(s *followerReplication, stopCh chan struct{}) {
 		peer := s.peer
 		s.peerLock.RUnlock()
 
-		start := time.Now()
 		if err := r.trans.AppendEntries(peer.ID, peer.Address, &req, &resp); err != nil {
 			r.logger.Error("failed to heartbeat to", "peer", peer.Address, "error", err)
 			r.observe(FailedHeartbeatObservation{PeerID: peer.ID, LastContact: s.LastContact()})
@@ -412,10 +404,7 @@ func (r *Raft) heartbeat(s *followerReplication, stopCh chan struct{}) {
 			}
 			s.setLastContact()
 			failures = 0
-			labels := []metrics.Label{{Name: "peer_id", Value: string(peer.ID)}}
-			metrics.MeasureSinceWithLabels([]string{"raft", "replication", "heartbeat"}, start, labels)
 			// Duplicated information. Kept for backward compatibility.
-			metrics.MeasureSince([]string{"raft", "replication", "heartbeat", string(peer.ID)}, start)
 			s.notifyAll(resp.Success)
 		}
 	}
@@ -612,12 +601,6 @@ func (r *Raft) setNewLogs(req *AppendEntriesRequest, nextIndex, lastIndex uint64
 
 // appendStats is used to emit stats about an AppendEntries invocation.
 func appendStats(peer string, start time.Time, logs float32) {
-	labels := []metrics.Label{{Name: "peer_id", Value: peer}}
-	metrics.MeasureSinceWithLabels([]string{"raft", "replication", "appendEntries", "rpc"}, start, labels)
-	metrics.IncrCounterWithLabels([]string{"raft", "replication", "appendEntries", "logs"}, logs, labels)
-	// Duplicated information. Kept for backward compatibility.
-	metrics.MeasureSince([]string{"raft", "replication", "appendEntries", "rpc", peer}, start)
-	metrics.IncrCounter([]string{"raft", "replication", "appendEntries", "logs", peer}, logs)
 }
 
 // handleStaleTerm is used when a follower indicates that we have a stale term.

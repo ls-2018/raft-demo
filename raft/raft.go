@@ -10,8 +10,6 @@ import (
 	"time"
 
 	"github.com/hashicorp/go-hclog"
-
-	"github.com/armon/go-metrics"
 )
 
 const (
@@ -151,7 +149,6 @@ func (r *Raft) run() {
 func (r *Raft) runFollower() {
 	didWarn := false
 	r.logger.Info("entering follower state", "follower", r, "leader", r.Leader())
-	metrics.IncrCounter([]string{"raft", "state", "follower"}, 1)
 	heartbeatTimer := randomTimeout(r.config().HeartbeatTimeout)
 
 	for r.getState() == Follower {
@@ -213,7 +210,6 @@ func (r *Raft) runFollower() {
 					didWarn = true
 				}
 			} else {
-				metrics.IncrCounter([]string{"raft", "transition", "heartbeat_timeout"}, 1)
 				if hasVote(r.configurations.latest, r.localID) {
 					r.logger.Warn("heartbeat timeout reached, starting election", "last-leader", lastLeader)
 					r.setState(Candidate)
@@ -255,7 +251,6 @@ func (r *Raft) liveBootstrap(configuration Configuration) error {
 // runCandidate runs the FSM for a candidate.
 func (r *Raft) runCandidate() {
 	r.logger.Info("entering candidate state", "node", r, "term", r.getCurrentTerm()+1)
-	metrics.IncrCounter([]string{"raft", "state", "candidate"}, 1)
 
 	// Start vote for us, and set a timeout
 	voteCh := r.electSelf()
@@ -369,7 +364,6 @@ func (r *Raft) setupLeaderState() {
 // the leaderLoop for the hot loop.
 func (r *Raft) runLeader() {
 	r.logger.Info("entering leader state", "leader", r)
-	metrics.IncrCounter([]string{"raft", "state", "leader"}, 1)
 
 	// Notify that we are the leader
 	overrideNotifyBool(r.leaderCh, true)
@@ -540,8 +534,6 @@ func (r *Raft) startStopReplication() {
 		r.observe(PeerObservation{Peer: repl.peer, Removed: true})
 	}
 
-	// Update peers metric
-	metrics.SetGauge([]string{"raft", "peers"}, float32(len(r.configurations.latest.Servers)))
 }
 
 // configurationChangeChIfStable returns r.configurationChangeCh if it's safe
@@ -669,7 +661,6 @@ func (r *Raft) leaderLoop() {
 				}
 			}
 
-			start := time.Now()
 			var groupReady []*list.Element
 			var groupFutures = make(map[uint64]*logFuture)
 			var lastIdxInGroup uint64
@@ -684,7 +675,6 @@ func (r *Raft) leaderLoop() {
 				}
 
 				// Measure the commit time
-				metrics.MeasureSince([]string{"raft", "commitTime"}, commitLog.dispatch)
 				groupReady = append(groupReady, e)
 				groupFutures[idx] = commitLog
 				lastIdxInGroup = idx
@@ -698,12 +688,6 @@ func (r *Raft) leaderLoop() {
 					r.leaderState.inflight.Remove(e)
 				}
 			}
-
-			// Measure the time to enqueue batch of logs for FSM to apply
-			metrics.MeasureSince([]string{"raft", "fsm", "enqueue"}, start)
-
-			// Count the number of logs enqueued
-			metrics.SetGauge([]string{"raft", "commitNumLogs"}, float32(len(groupReady)))
 
 			if stepDown {
 				if r.config().ShutdownOnRemove {
@@ -927,7 +911,6 @@ func (r *Raft) checkLeaderLease() time.Duration {
 					r.logger.Debug("failed to contact", "server-id", server.ID, "time", diff)
 				}
 			}
-			metrics.AddSample([]string{"raft", "leader", "lastContact"}, float32(diff/time.Millisecond))
 		}
 	}
 
@@ -936,7 +919,6 @@ func (r *Raft) checkLeaderLease() time.Duration {
 	if contacted < quorum {
 		r.logger.Warn("failed to contact quorum of nodes, stepping down")
 		r.setState(Follower)
-		metrics.IncrCounter([]string{"raft", "transition", "leader_lease_timeout"}, 1)
 	}
 	return maxDiff
 }
@@ -963,7 +945,6 @@ func (r *Raft) quorumSize() int {
 // This can only be run on the leader, and returns a future that can be used to
 // block until complete.
 func (r *Raft) restoreUserSnapshot(meta *SnapshotMeta, reader io.Reader) error {
-	defer metrics.MeasureSince([]string{"raft", "restoreUserSnapshot"}, time.Now())
 
 	// Sanity check the version.
 	version := meta.Version
@@ -1097,14 +1078,12 @@ func (r *Raft) appendConfigurationEntry(future *configurationChangeFuture) {
 // as inflight and begin replication of it.
 func (r *Raft) dispatchLogs(applyLogs []*logFuture) {
 	now := time.Now()
-	defer metrics.MeasureSince([]string{"raft", "leader", "dispatchLog"}, now)
 
 	term := r.getCurrentTerm()
 	lastIndex := r.getLastIndex()
 
 	n := len(applyLogs)
 	logs := make([]*Log, n)
-	metrics.SetGauge([]string{"raft", "leader", "dispatchNumLogs"}, float32(n))
 
 	for idx, applyLog := range applyLogs {
 		applyLog.dispatch = now
@@ -1267,7 +1246,6 @@ func (r *Raft) processRPC(rpc RPC) {
 // so that they can be fast-pathed if a transport supports it. This must only
 // be called from the main thread.
 func (r *Raft) processHeartbeat(rpc RPC) {
-	defer metrics.MeasureSince([]string{"raft", "rpc", "processHeartbeat"}, time.Now())
 
 	// Check if we are shutdown, just ignore the RPC
 	select {
@@ -1289,7 +1267,6 @@ func (r *Raft) processHeartbeat(rpc RPC) {
 // appendEntries is invoked when we get an append entries RPC call. This must
 // only be called from the main thread.
 func (r *Raft) appendEntries(rpc RPC, a *AppendEntriesRequest) {
-	defer metrics.MeasureSince([]string{"raft", "rpc", "appendEntries"}, time.Now())
 	// Setup a response
 	resp := &AppendEntriesResponse{
 		RPCHeader:      r.getRPCHeader(),
@@ -1352,7 +1329,6 @@ func (r *Raft) appendEntries(rpc RPC, a *AppendEntriesRequest) {
 
 	// Process any new entries
 	if len(a.Entries) > 0 {
-		start := time.Now()
 
 		// Delete any conflicting entries, skip any duplicates
 		lastLogIdx, _ := r.getLastLog()
@@ -1410,19 +1386,16 @@ func (r *Raft) appendEntries(rpc RPC, a *AppendEntriesRequest) {
 			r.setLastLog(last.Index, last.Term)
 		}
 
-		metrics.MeasureSince([]string{"raft", "rpc", "appendEntries", "storeLogs"}, start)
 	}
 
 	// Update the commit index
 	if a.LeaderCommitIndex > 0 && a.LeaderCommitIndex > r.getCommitIndex() {
-		start := time.Now()
 		idx := min(a.LeaderCommitIndex, r.getLastIndex())
 		r.setCommitIndex(idx)
 		if r.configurations.latestIndex <= idx {
 			r.setCommittedConfiguration(r.configurations.latest, r.configurations.latestIndex)
 		}
 		r.processLogs(idx, nil)
-		metrics.MeasureSince([]string{"raft", "rpc", "appendEntries", "processLogs"}, start)
 	}
 
 	// Everything went well, set success
@@ -1453,7 +1426,6 @@ func (r *Raft) processConfigurationLogEntry(entry *Log) error {
 
 // requestVote is invoked when we get an request vote RPC call.
 func (r *Raft) requestVote(rpc RPC, req *RequestVoteRequest) {
-	defer metrics.MeasureSince([]string{"raft", "rpc", "requestVote"}, time.Now())
 	r.observe(*req)
 
 	// Setup a response
@@ -1555,7 +1527,6 @@ func (r *Raft) requestVote(rpc RPC, req *RequestVoteRequest) {
 // too far behind a leader for log replay. This must only be called
 // from the main thread.
 func (r *Raft) installSnapshot(rpc RPC, req *InstallSnapshotRequest) {
-	defer metrics.MeasureSince([]string{"raft", "rpc", "installSnapshot"}, time.Now())
 	// Setup a response
 	resp := &InstallSnapshotResponse{
 		Term:    r.getCurrentTerm(),
@@ -1718,7 +1689,6 @@ func (r *Raft) electSelf() <-chan *voteResult {
 	// Construct a function to ask for a vote
 	askPeer := func(peer Server) {
 		r.goFunc(func() {
-			defer metrics.MeasureSince([]string{"raft", "candidate", "electSelf"}, time.Now())
 			resp := &voteResult{voterID: peer.ID}
 			err := r.trans.RequestVote(peer.ID, peer.Address, req, &resp.RequestVoteResponse)
 			if err != nil {

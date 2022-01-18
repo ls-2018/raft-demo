@@ -3,10 +3,8 @@ package raft
 import (
 	"bytes"
 	"fmt"
+	"github.com/armon/go-metrics"
 	"testing"
-	"time"
-
-	metrics "github.com/armon/go-metrics"
 )
 
 func TestOldestLog(t *testing.T) {
@@ -64,61 +62,6 @@ func TestOldestLog(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestEmitsLogStoreMetrics(t *testing.T) {
-	sink := testSetupMetrics(t)
-
-	start := time.Now()
-
-	s := NewInmemStore()
-	logs := []*Log{
-		&Log{
-			Index:      1234,
-			Term:       1,
-			AppendedAt: time.Now(),
-		},
-		&Log{
-			Index: 1235,
-			Term:  1,
-		},
-		&Log{
-			Index: 1236,
-			Term:  2,
-		},
-	}
-	if err := s.StoreLogs(logs); err != nil {
-		t.Fatalf("expected store logs not to fail: %s", err)
-	}
-
-	stopCh := make(chan struct{})
-	defer close(stopCh)
-
-	go emitLogStoreMetrics(s, []string{"foo"}, time.Millisecond, stopCh)
-
-	// Wait for at least one interval
-	time.Sleep(5 * time.Millisecond)
-
-	got := getCurrentGaugeValue(t, sink, "raft.test.foo.oldestLogAge")
-
-	// Assert the age is in a reasonable range.
-	if got > float32(time.Since(start).Milliseconds()) {
-		t.Fatalf("max age before test start: %v", got)
-	}
-
-	if got < 1 {
-		t.Fatalf("max age less than interval: %v", got)
-	}
-}
-
-func testSetupMetrics(t *testing.T) *metrics.InmemSink {
-	// Record for ages (5 mins) so we can be confident that our assertions won't
-	// fail on silly long test runs due to dropped data.
-	s := metrics.NewInmemSink(10*time.Second, 300*time.Second)
-	cfg := metrics.DefaultConfig("raft.test")
-	cfg.EnableHostname = false
-	metrics.NewGlobal(cfg, s)
-	return s
 }
 
 func getCurrentGaugeValue(t *testing.T, sink *metrics.InmemSink, name string) float32 {
