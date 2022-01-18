@@ -7,24 +7,22 @@ import (
 	metrics "github.com/armon/go-metrics"
 )
 
-// LogType describes various types of log entries.
+// LogType 描述了各种类型的日志条目。
 type LogType uint8
 
 const (
-	// LogCommand is applied to a user FSM.
+	// LogCommand 应用于用户的FSM  最终状态机
 	LogCommand LogType = iota
 
-	// LogNoop is used to assert leadership.
+	// LogNoop 是用来宣示领导地位的。
 	LogNoop
 
-	// LogAddPeerDeprecated is used to add a new peer. This should only be used with
-	// older protocol versions designed to be compatible with unversioned
-	// Raft servers. See comments in config.go for details.
+	// LogAddPeerDeprecated
+	// 用来添加一个新的node。这应该只用于旧的协议版本，旨在与未版本的Raft服务器兼容。详见config.go中的注释。
 	LogAddPeerDeprecated
 
-	// LogRemovePeerDeprecated is used to remove an existing peer. This should only be
-	// used with older protocol versions designed to be compatible with
-	// unversioned Raft servers. See comments in config.go for details.
+	// LogRemovePeerDeprecated
+	//用来删除一个现有的node。这应该只用于较早的协议版本，旨在与没有版本的Raft服务器兼容。详见config.go中的注释。
 	LogRemovePeerDeprecated
 
 	// LogBarrier 是用来确保所有前面的操作都被应用到FSM中。它类似于LogNoop，但是它不是一旦提交就返回，

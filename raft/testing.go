@@ -17,10 +17,11 @@ import (
 )
 
 var (
+	// 用户快照没有数据时出现错误
 	userSnapshotErrorsOnNoData = true
 )
 
-// Return configurations optimized for in-memory
+// 返回 in-memory 优化的配置
 func inmemConfig(t *testing.T) *Config {
 	conf := DefaultConfig()
 	conf.HeartbeatTimeout = 50 * time.Millisecond

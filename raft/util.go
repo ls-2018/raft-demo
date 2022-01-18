@@ -13,16 +13,15 @@ import (
 )
 
 func init() {
-	// Ensure we use a high-entropy seed for the pseudo-random generator
+	// 确保我们为伪随机发生器使用一个高熵值的种子
 	rand.Seed(newSeed())
 }
 
-// returns an int64 from a crypto random source
-// can be used to seed a source for a math/rand.
+// 从加密的随机源返回一个int64。可用于为math/rand的种子源。
 func newSeed() int64 {
 	r, err := crand.Int(crand.Reader, big.NewInt(math.MaxInt64))
 	if err != nil {
-		panic(fmt.Errorf("failed to read random bytes: %v", err))
+		panic(fmt.Errorf("读取随机字节失败: %v", err))
 	}
 	return r.Int64()
 }
