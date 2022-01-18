@@ -15,11 +15,12 @@ import (
 )
 
 const (
-	// This is the current suggested max size of the data in a raft log entry.
-	// This is based on current architecture, default timing, etc. Clients can
+	// SuggestedMaxDataSize This is the current suggested max size of the data in a raft log entry.
 	// ignore this value if they want as there is no actual hard checking
 	// within the library. As the library is enhanced this value may change
 	// over time to reflect current suggested maximums.
+	// 这是目前建议的raft日志条目中数据的最大值。这是基于当前的架构、默认时间等。
+	// 客户可以忽略这个值，如果他们想的话，因为库内没有实际的硬检查。随着库的增强，这个值可能会随着时间的推移而改变，以反映当前建议的最大值。
 	//
 	// Increasing beyond this risks RPC IO taking too long and preventing
 	// timely heartbeat signals which are sent in serial in current transports,

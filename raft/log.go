@@ -27,11 +27,8 @@ const (
 	// unversioned Raft servers. See comments in config.go for details.
 	LogRemovePeerDeprecated
 
-	// LogBarrier is used to ensure all preceding operations have been
-	// applied to the FSM. It is similar to LogNoop, but instead of returning
-	// once committed, it only returns once the FSM manager acks it. Otherwise
-	// it is possible there are operations committed but not yet applied to
-	// the FSM.
+	// LogBarrier 是用来确保所有前面的操作都被应用到FSM中。它类似于LogNoop，但是它不是一旦提交就返回，
+	//而是只在FSM管理器捕获它时返回。否则就有可能存在已提交但尚未应用到FSM的操作。
 	LogBarrier
 
 	// LogConfiguration establishes a membership change configuration. It is
