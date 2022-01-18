@@ -53,26 +53,26 @@ func (lt LogType) String() string {
 	}
 }
 
-// Log entries are replicated to all members of the Raft cluster
-// and form the heart of the replicated state machine.
+// Log 条目被复制到Raft集群的所有成员中,构成了复制状态机的核心。
 type Log struct {
-	// Index holds the index of the log entry.
+	// Index 日志条目的索引
 	Index uint64
 
-	// Term holds the election term of the log entry.
+	// Term 当前日志所处的任期
 	Term uint64
 
-	// Type holds the type of the log entry.
+	// Type 日志类型
 	Type LogType
 
-	// Data holds the log entry's type-specific data.
+	// Data 持有日志条目的特定类型的数据。
 	Data []byte
 
-	// Extensions holds an opaque byte slice of information for middleware. It
-	// is up to the client of the library to properly modify this as it adds
-	// layers and remove those layers when appropriate. This value is a part of
-	// the log, so very large values could cause timing issues.
-	//
+	// Extensions
+	// 持有一个不透明的字节切片，用于中间件的信息。
+	// 这库的客户端在添加、删除layer 时对其进行适当的修改。
+	// 这个值是日志的一部分，所以非常大的值可能会导致时间问题。
+
+
 	// N.B. It is _up to the client_ to handle upgrade paths. For instance if
 	// using this with go-raftchunking, the client should ensure that all Raft
 	// peers are using a version that can handle that extension before ever

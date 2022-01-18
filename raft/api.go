@@ -735,7 +735,7 @@ func (r *Raft) ApplyLog(log Log, timeout time.Duration) ApplyFuture {
 		timer = time.After(timeout)
 	}
 
-	// Create a log future, no index or term yet
+	// 创建一个logFuture，还没有索引和任期
 	logFuture := &logFuture{
 		log: Log{
 			Type:       LogCommand,
