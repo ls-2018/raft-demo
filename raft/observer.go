@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// Observation is sent along the given channel to observers when an event occurs.
+// Observation 在事件发生时沿着给定的通道发送给观察员。
 type Observation struct {
 	// Raft holds the Raft instance generating the observation.
 	Raft *Raft
@@ -17,7 +17,7 @@ type Observation struct {
 	Data interface{}
 }
 
-// LeaderObservation is used for the data when leadership changes.
+// LeaderObservation 是用于leader变化时的数据。
 type LeaderObservation struct {
 	Leader ServerAddress
 }
@@ -111,7 +111,7 @@ func (r *Raft) DeregisterObserver(or *Observer) {
 	delete(r.observers, or.id)
 }
 
-// observe sends an observation to every observer.
+// observe 向每个node发送了一个观察结果。
 func (r *Raft) observe(o interface{}) {
 	// In general observers should not block. But in any case this isn't
 	// disastrous as we only hold a read lock, which merely prevents

@@ -88,13 +88,14 @@ type leaderState struct {
 	stepDown                     chan struct{}
 }
 
-// setLeader is used to modify the current leader of the cluster
+// setLeader 是用来修改集群的当前领导者的
 func (r *Raft) setLeader(leader ServerAddress) {
 	r.leaderLock.Lock()
 	oldLeader := r.leader
 	r.leader = leader
 	r.leaderLock.Unlock()
 	if oldLeader != leader {
+		// 之前有，现在没有;之前没有现在没有;之前没有 现在有,但是不一样
 		r.observe(LeaderObservation{Leader: leader})
 	}
 }
@@ -1740,18 +1741,16 @@ func (r *Raft) persistVote(term uint64, candidate []byte) error {
 	return nil
 }
 
-// setCurrentTerm is used to set the current term in a durable manner.
+// setCurrentTerm 是用来以持久的方式设置当前的任期。
 func (r *Raft) setCurrentTerm(t uint64) {
-	// Persist to disk first
+	// 先保存到磁盘上
 	if err := r.stable.SetUint64(keyCurrentTerm, t); err != nil {
-		panic(fmt.Errorf("failed to save current term: %v", err))
+		panic(fmt.Errorf("保存到磁盘上: %v", err))
 	}
 	r.raftState.setCurrentTerm(t)
 }
 
-// setState is used to update the current state. Any state
-// transition causes the known leader to be cleared. This means
-// that leader should be set only after updating the state.
+// setState 是用来更新当前状态。任何状态转换都会导致已知的领导者被清空。这意味着只有在更新状态后才应设置领导者。
 func (r *Raft) setState(state RaftState) {
 	r.setLeader("")
 	oldState := r.raftState.getState()

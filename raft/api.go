@@ -68,12 +68,13 @@ var (
 // Raft raft 节点
 type Raft struct {
 	raftState
-
+	// stable 是一个用于持久状态的StableStore实现。它为raftState中的许多字段提供稳定的存储。 k/v数据库
+	stable StableStore
 	// protocolVersion raft节点之间通信的协议版本
 	protocolVersion ProtocolVersion
 
 	// applyCh 是用来异步发送日志到主线程，以便被提交并应用到FSM中。
-	applyCh chan *logFuture
+	applyCh chan *logFuture // raft 节点间同步channel
 
 	// conf 存储当前要使用的配置。这是所提供的最新的配置。所有对配置值的读取都应该使用config()辅助方法来安全读取。
 	conf atomic.Value
@@ -84,31 +85,25 @@ type Raft struct {
 	// FSM 客户端状态机应该实现的接口
 	fsm FSM
 
-	// fsmMutateCh is used to send state-changing updates to the FSM. This
-	// receives pointers to commitTuple structures when applying logs or
-	// pointers to restoreFuture structures when restoring a snapshot. We
-	// need control over the order of these operations when doing user
-	// restores so that we finish applying any old log applies before we
-	// take a user snapshot on the leader, otherwise we might restore the
-	// snapshot and apply old logs to it that were in the pipe.
+	// fsmMutateCh 用来向FSM发送状态变化的更新。
+	// 在应用日志时，它接收指向commitTuple结构的指针;在恢复快照时接收指向restoreFuture结构的指针。
 	fsmMutateCh chan interface{}
 
-	// fsmSnapshotCh is used to trigger a new snapshot being taken
+	// fsmSnapshotCh 用来触发新的快照拍摄。
 	fsmSnapshotCh chan *reqSnapshotFuture
 
-	// lastContact is the last time we had contact from the
-	// leader node. This can be used to gauge staleness.
+	// lastContact 是我们最后一次与领导节点通信的时间。这可以用来衡量呆滞性。
 	lastContact     time.Time
 	lastContactLock sync.RWMutex
 
-	// Leader is the current cluster leader
+	// Leader 当前的集群leader地址
 	leader     ServerAddress
 	leaderLock sync.RWMutex
 
-	// leaderCh is used to notify of leadership changes
+	// leaderCh 用来通知leader的变化
 	leaderCh chan bool
 
-	// leaderState used only while state is leader
+	// leaderState 只有 leader 是有此值
 	leaderState leaderState
 
 	// candidateFromLeadershipTransfer is used to indicate that this server became
@@ -128,52 +123,42 @@ type Raft struct {
 	// LogStore 日志存储空间
 	logs LogStore
 
-	// Used to request the leader to make configuration changes.
+	// 用来记录leader 进行配置修改。
 	configurationChangeCh chan *configurationChangeFuture
 
-	// Tracks the latest configuration and latest committed configuration from
-	// the log/snapshot.
+	// 追踪日志/快照中的最新配置和最新提交的配置。
 	configurations configurations
 
-	// Holds a copy of the latest configuration which can be read
-	// independently from main loop.
+	// 保存一份最新配置的副本，可以从主循环中独立读取。
 	latestConfiguration atomic.Value
 
-	// RPC chan comes from the transport layer
+	// RPC chan来自于传输层
 	rpcCh <-chan RPC
 
-	// Shutdown channel to exit, protected to prevent concurrent exits
+	// Shutdown 退出的通道，保护以防止同时退出
 	shutdown     bool
 	shutdownCh   chan struct{}
 	shutdownLock sync.Mutex
 
-	// snapshots is used to store and retrieve snapshots
+	// snapshots 存储和恢复快照数据
 	snapshots SnapshotStore
 
-	// userSnapshotCh is used for user-triggered snapshots
+	// userSnapshotCh
 	userSnapshotCh chan *userSnapshotFuture
 
-	// userRestoreCh is used for user-triggered restores of external
-	// snapshots
+	// userRestoreCh 用于用户触发的快照
 	userRestoreCh chan *userRestoreFuture
 
-	// stable is a StableStore implementation for durable state
-	// It provides stable storage for many fields in raftState
-	stable StableStore
-
-	// The transport layer we use
+	// 使用的传输层
 	trans Transport
 
-	// verifyCh is used to async send verify futures to the main thread
-	// to verify we are still the leader
+	// verifyCh  用于向主线程异步发送验证请求，以验证我们仍然是领导者。
 	verifyCh chan *verifyFuture
 
-	// configurationsCh is used to get the configuration data safely from
-	// outside of the main thread.
+	// configurationsCh 安全的从主线程之外获取配置
 	configurationsCh chan *configurationsFuture
 
-	// bootstrapCh is used to attempt an initial bootstrap from outside of
-	// the main thread.
+	// bootstrapCh 是用来尝试从主线程之外进行初始引导
 	bootstrapCh chan *bootstrapFuture
 
 	// List of observers and the mutex that protects them. The observers list
@@ -181,8 +166,7 @@ type Raft struct {
 	observersLock sync.RWMutex
 	observers     map[uint64]*Observer
 
-	// leadershipTransferCh is used to start a leadership transfer from outside of
-	// the main thread.
+	// leadershipTransferCh 是用来从主线程之外启动领导权转移的。
 	leadershipTransferCh chan *leadershipTransferFuture
 }
 
@@ -493,8 +477,8 @@ func NewRaft(conf *Config, fsm FSM, logs LogStore, stable StableStore, snaps Sna
 	}
 
 	// 如果选项被启用，缓冲区适用于MaxAppendEntries。
-	applyCh := make(chan *logFuture)
-	if conf.BatchApplyCh { // 默认为False
+	applyCh := make(chan *logFuture) // raft 节点间同步channel
+	if conf.BatchApplyCh {           // 默认为False
 		applyCh = make(chan *logFuture, conf.MaxAppendEntries)
 	}
 
@@ -502,37 +486,37 @@ func NewRaft(conf *Config, fsm FSM, logs LogStore, stable StableStore, snaps Sna
 		protocolVersion:       protocolVersion,
 		applyCh:               applyCh,
 		fsm:                   fsm,
-		fsmMutateCh:           make(chan interface{}, 128),
-		fsmSnapshotCh:         make(chan *reqSnapshotFuture),
-		leaderCh:              make(chan bool, 1),
-		localID:               localID,
-		localAddr:             localAddr,
+		fsmMutateCh:           make(chan interface{}, 128),   // fsm 变更 ch
+		fsmSnapshotCh:         make(chan *reqSnapshotFuture), // fsm 快照 ch
+		leaderCh:              make(chan bool, 1),            // leader 变更 ch
+		localID:               localID,                       // 逻辑ID
+		localAddr:             localAddr,                     // 实际的IP:PORT
 		logger:                logger,
-		logs:                  logs,
-		configurationChangeCh: make(chan *configurationChangeFuture),
+		logs:                  logs,                                  // bolt 数据存储
+		configurationChangeCh: make(chan *configurationChangeFuture), //配置变更 ch
 		configurations:        configurations{},
 		rpcCh:                 trans.Consumer(),
-		snapshots:             snaps,
-		userSnapshotCh:        make(chan *userSnapshotFuture),
+		snapshots:             snaps,                          // 快照存储
+		userSnapshotCh:        make(chan *userSnapshotFuture), // 用户主动打快照 ch
 		userRestoreCh:         make(chan *userRestoreFuture),
-		shutdownCh:            make(chan struct{}),
-		stable:                stable,
-		trans:                 trans,
-		verifyCh:              make(chan *verifyFuture, 64),
+		shutdownCh:            make(chan struct{}),          // 停止 ch
+		stable:                stable,                       // 任期 bolt 数据库
+		trans:                 trans,                        //
+		verifyCh:              make(chan *verifyFuture, 64), // 校验自己是不是leader
 		configurationsCh:      make(chan *configurationsFuture, 8),
 		bootstrapCh:           make(chan *bootstrapFuture),
 		observers:             make(map[uint64]*Observer),
 		leadershipTransferCh:  make(chan *leadershipTransferFuture, 1),
 	}
 
-	r.conf.Store(*conf)
+	r.conf.Store(*conf) // 默认配置，用户手动设置的值
 
-	// Initialize as a follower.
+	// 初始化为Follower
 	r.setState(Follower)
 
-	// Restore the current term and the last log.
-	r.setCurrentTerm(currentTerm)
-	r.setLastLog(lastLog.Index, lastLog.Term)
+	// 重新存储当前任期和日志索引
+	r.setCurrentTerm(currentTerm)             // db + memory
+	r.setLastLog(lastLog.Index, lastLog.Term) // memory
 
 	// Attempt to restore a snapshot if there are any.
 	if err := r.restoreSnapshot(); err != nil {

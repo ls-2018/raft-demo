@@ -6,12 +6,16 @@ import (
 	"github.com/boltdb/bolt"
 	"github.com/hashicorp/go-hclog"
 	"os"
+	"sync"
 	"time"
 )
 
 var dbConf = []byte("MyBucket")
 
 func main() {
+	var a = sync.WaitGroup{}
+}
+func mai2n() {
 	logger := hclog.New(&hclog.LoggerOptions{
 		Name:   "raft-net",
 		Output: os.Stdout,

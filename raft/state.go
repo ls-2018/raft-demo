@@ -5,21 +5,13 @@ import (
 	"sync/atomic"
 )
 
-// RaftState captures the state of a Raft node: Follower, Candidate, Leader,
-// or Shutdown.
+// RaftState 捕获一个Raft节点的状态。跟随者、候选者、领导者或关闭。
 type RaftState uint32
 
 const (
-	// Follower is the initial state of a Raft node.
 	Follower RaftState = iota
-
-	// Candidate is one of the valid states of a Raft node.
 	Candidate
-
-	// Leader is one of the valid states of a Raft node.
 	Leader
-
-	// Shutdown is the terminal state of a Raft node.
 	Shutdown
 )
 
@@ -38,21 +30,13 @@ func (s RaftState) String() string {
 	}
 }
 
-// raftState is used to maintain various state variables
-// and provides an interface to set/get the variables in a
-// thread safe manner.
+// raftState 用于维护各种状态变量，并提供了一个接口，以便以线程安全的方式设置/获取这些变量
 type raftState struct {
-	// currentTerm commitIndex, lastApplied,  must be kept at the top of
-	// the struct so they're 64 bit aligned which is a requirement for
-	// atomic ops on 32 bit platforms.
-
-	// The current term, cache of StableStore
+	// 当前任期
 	currentTerm uint64
-
-	// Highest committed log entry
+	// commit的  最高的日志条目
 	commitIndex uint64
-
-	// Last applied log to the FSM
+	// 上一次apply to fsm 的index
 	lastApplied uint64
 
 	// protects 4 next fields
@@ -62,35 +46,41 @@ type raftState struct {
 	lastSnapshotIndex uint64
 	lastSnapshotTerm  uint64
 
-	// Cache the latest log from LogStore
+	// 缓存 LogStore 最新的日志索引数据
 	lastLogIndex uint64
 	lastLogTerm  uint64
 
-	// Tracks running goroutines
+	// 运行goroutines的轨迹
 	routinesGroup sync.WaitGroup
 
-	// The current state
+	// 当前状态
 	state RaftState
 }
 
+// ok
 func (r *raftState) getState() RaftState {
+	// 初始化时，因为值为0 ,本身就是follower
 	stateAddr := (*uint32)(&r.state)
 	return RaftState(atomic.LoadUint32(stateAddr))
 }
 
+// OK
 func (r *raftState) setState(s RaftState) {
 	stateAddr := (*uint32)(&r.state)
 	atomic.StoreUint32(stateAddr, uint32(s))
 }
 
+// OK
 func (r *raftState) getCurrentTerm() uint64 {
 	return atomic.LoadUint64(&r.currentTerm)
 }
 
+// OK
 func (r *raftState) setCurrentTerm(term uint64) {
 	atomic.StoreUint64(&r.currentTerm, term)
 }
 
+// ok
 func (r *raftState) getLastLog() (index, term uint64) {
 	r.lastLock.Lock()
 	index = r.lastLogIndex
@@ -99,6 +89,7 @@ func (r *raftState) getLastLog() (index, term uint64) {
 	return
 }
 
+// ok
 func (r *raftState) setLastLog(index, term uint64) {
 	r.lastLock.Lock()
 	r.lastLogIndex = index
