@@ -27,15 +27,15 @@ const (
 	tmpSuffix     = ".tmp"
 )
 
-// FileSnapshotStore implements the SnapshotStore interface and allows
-// snapshots to be made on the local disk.
+var _ SnapshotStore = &FileSnapshotStore{}
+
+// FileSnapshotStore 实现了SnapshotStore接口，允许在本地磁盘上制作快照。
 type FileSnapshotStore struct {
 	path   string
 	retain int
 	logger hclog.Logger
 
-	// noSync, if true, skips crash-safe file fsync api calls.
-	// It's a private field, only used in testing
+	// noSync, 如果为真，则跳过防崩溃的文件fsync api调用。 这是一个私有字段，只在测试中使用。
 	noSync bool
 }
 
@@ -80,12 +80,11 @@ func (b *bufferedFile) Close() error {
 	return b.fh.Close()
 }
 
-// NewFileSnapshotStoreWithLogger creates a new FileSnapshotStore based
-// on a base directory. The `retain` parameter controls how many
-// snapshots are retained. Must be at least 1.
+// NewFileSnapshotStoreWithLogger
+// 在基础目录的基础上创建一个新的FileSnapshotStore。`retain`参数控制了多少个 保留多少快照。必须至少是1。
 func NewFileSnapshotStoreWithLogger(base string, retain int, logger hclog.Logger) (*FileSnapshotStore, error) {
 	if retain < 1 {
-		return nil, fmt.Errorf("must retain at least one snapshot")
+		return nil, fmt.Errorf("必须至少保留一个快照")
 	}
 	if logger == nil {
 		logger = hclog.New(&hclog.LoggerOptions{
@@ -95,29 +94,27 @@ func NewFileSnapshotStoreWithLogger(base string, retain int, logger hclog.Logger
 		})
 	}
 
-	// Ensure our path exists
+	// 确保我们的路径存在
 	path := filepath.Join(base, snapPath)
 	if err := os.MkdirAll(path, 0755); err != nil && !os.IsExist(err) {
-		return nil, fmt.Errorf("snapshot path not accessible: %v", err)
+		return nil, fmt.Errorf("无法访问快照路径: %v", err)
 	}
 
 	// Setup the store
 	store := &FileSnapshotStore{
-		path:   path,
-		retain: retain,
+		path:   path,   // node/raft_1/snapshots
+		retain: retain, // 2
 		logger: logger,
 	}
 
-	// Do a permissions test
+	// 做一个权限测试
 	if err := store.testPermissions(); err != nil {
-		return nil, fmt.Errorf("permissions test failed: %v", err)
+		return nil, fmt.Errorf("权限测试失败: %v", err)
 	}
 	return store, nil
 }
 
-// NewFileSnapshotStore creates a new FileSnapshotStore based
-// on a base directory. The `retain` parameter controls how many
-// snapshots are retained. Must be at least 1.
+// NewFileSnapshotStore 在基础目录的基础上创建一个新的FileSnapshotStore。`retain`参数控制了多少个 保留多少快照。必须至少是1。
 func NewFileSnapshotStore(base string, retain int, logOutput io.Writer) (*FileSnapshotStore, error) {
 	if logOutput == nil {
 		logOutput = os.Stderr
@@ -129,10 +126,10 @@ func NewFileSnapshotStore(base string, retain int, logOutput io.Writer) (*FileSn
 	}))
 }
 
-// testPermissions tries to touch a file in our path to see if it works.
+// testPermissions 试图触碰我们路径中的一个文件，看看它是否有效。
 func (f *FileSnapshotStore) testPermissions() error {
 	path := filepath.Join(f.path, testPath)
-	fh, err := os.Create(path)
+	fh, err := os.Create(path) // node/raft_1/snapshots/permTest
 	if err != nil {
 		return err
 	}

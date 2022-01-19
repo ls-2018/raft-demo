@@ -25,7 +25,7 @@ func TestTCPTransport_WithAdvertise(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(ips) == 0 {
-		t.Fatalf("localhost did not resolve to any IPs")
+		t.Fatalf("localhost没有解析到任何IP")
 	}
 	addr := &net.TCPAddr{IP: ips[0], Port: 12345}
 	trans, err := NewTCPTransportWithLogger("0.0.0.0:0", addr, 1, 0, newTestLogger(t))

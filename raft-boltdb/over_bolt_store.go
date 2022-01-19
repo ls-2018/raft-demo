@@ -7,76 +7,69 @@ import (
 )
 
 const (
-	// Permissions to use on the db file. This is only used if the
-	// database file does not exist and needs to be created.
+	// 在db文件上使用的权限。这只在数据库文件不存在而需要创建时使用。
 	dbFileMode = 0600
 )
 
 var (
-	// Bucket names we perform transactions in
+	// 我们执行事务的的Bucket名称
 	dbLogs = []byte("logs")
 	dbConf = []byte("conf")
 
-	// An error indicating a given key does not exist
+	// ErrKeyNotFound 一个错误表明一个给定的键不存在
 	ErrKeyNotFound = errors.New("not found")
 )
+var _ raft.LogStore = &BoltStore{}
+var _ raft.StableStore = &BoltStore{}
 
-// BoltStore provides access to BoltDB for Raft to store and retrieve
-// log entries. It also provides key/value storage, and can be used as
-// a LogStore and StableStore.
+// BoltStore 为Raft提供对BoltDB的访问，以存储和检索日志条目。它还提供了键/值存储，并可作为LogStore和StableStore使用。
 type BoltStore struct {
-	// conn is the underlying handle to the db.
+	// conn 是数据库的底层句柄。
 	conn *bolt.DB
 
-	// The path to the Bolt database file
+	// bolt数据库文件的路径
 	path string
 }
 
-// Options contains all the configuration used to open the BoltDB
+// Options 包含用于打开BoltDB的所有配置。
 type Options struct {
-	// Path is the file path to the BoltDB to use
+	// Path 是要使用的BoltDB的文件路径
 	Path string
 
-	// BoltOptions contains any specific BoltDB options you might
-	// want to specify [e.g. open timeout]
+	// BoltOptions 包含任何你可能想要指定的BoltDB选项  [例如：OPEN超时]。
 	BoltOptions *bolt.Options
 
-	// NoSync causes the database to skip fsync calls after each
-	// write to the log. This is unsafe, so it should be used
-	// with caution.
+	// NoSync 导致数据库在每次写入日志后跳过fsync调用。这是不安全的，所以应该谨慎使用。
 	NoSync bool
 }
 
-// readOnly returns true if the contained bolt options say to open
-// the DB in readOnly mode [this can be useful to tools that want
-// to examine the log]
+// readOnly 如果包含的bolt选项说要在只读模式下打开DB [这对想要检查日志的工具很有用] 。
 func (o *Options) readOnly() bool {
 	return o != nil && o.BoltOptions != nil && o.BoltOptions.ReadOnly
 }
 
-// NewBoltStore takes a file path and returns a connected Raft backend.
+// NewBoltStore 接收一个文件路径并返回一个连接的Raft后端。
 func NewBoltStore(path string) (*BoltStore, error) {
 	return New(Options{Path: path})
 }
 
-// New uses the supplied options to open the BoltDB and prepare it for use as a raft backend.
+// New 使用所提供的选项来打开BoltDB，并准备将其用作raft的后端。
 func New(options Options) (*BoltStore, error) {
-	// Try to connect
 	handle, err := bolt.Open(options.Path, dbFileMode, options.BoltOptions)
 	if err != nil {
 		return nil, err
 	}
 	handle.NoSync = options.NoSync
 
-	// Create the new store
 	store := &BoltStore{
 		conn: handle,
 		path: options.Path,
 	}
 
-	// If the store was opened read-only, don't try and create buckets
+	// 如果store是以只读方式打开的，就不要试图创建水桶。
 	if !options.readOnly() {
-		// Set up our buckets
+		// 不是只读模式
+		// 设置我们的bucket
 		if err := store.initialize(); err != nil {
 			store.Close()
 			return nil, err
@@ -85,18 +78,20 @@ func New(options Options) (*BoltStore, error) {
 	return store, nil
 }
 
-// initialize is used to set up all of the buckets.
+// initialize 用来设置所有的bucket
 func (b *BoltStore) initialize() error {
+	// 开始一个可写的事务
 	tx, err := b.conn.Begin(true)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
 
-	// Create all the buckets
+	// logs
 	if _, err := tx.CreateBucketIfNotExists(dbLogs); err != nil {
 		return err
 	}
+	// conf
 	if _, err := tx.CreateBucketIfNotExists(dbConf); err != nil {
 		return err
 	}
@@ -104,12 +99,13 @@ func (b *BoltStore) initialize() error {
 	return tx.Commit()
 }
 
-// Close is used to gracefully close the DB connection.
+// Close 优雅的关闭数据库连接
 func (b *BoltStore) Close() error {
 	return b.conn.Close()
 }
 
-// FirstIndex returns the first known index from the Raft log.
+// FirstIndex 从raft log 中返回第一个记录的value
+// 如果第一个log日志值不符合条件，类似 a ；会产生panic
 func (b *BoltStore) FirstIndex() (uint64, error) {
 	tx, err := b.conn.Begin(false)
 	if err != nil {
@@ -125,7 +121,8 @@ func (b *BoltStore) FirstIndex() (uint64, error) {
 	}
 }
 
-// LastIndex returns the last known index from the Raft log.
+// LastIndex 从raft log 中返回最后一个记录的value
+// 如果第一个log日志值不符合条件，类似 a ；会产生panic
 func (b *BoltStore) LastIndex() (uint64, error) {
 	tx, err := b.conn.Begin(false)
 	if err != nil {
@@ -141,7 +138,7 @@ func (b *BoltStore) LastIndex() (uint64, error) {
 	}
 }
 
-// GetLog is used to retrieve a log from BoltDB at a given index.
+// GetLog 是用来从BoltDB检索指定索引的日志。在bolt层面来说，即为指定key的数据
 func (b *BoltStore) GetLog(idx uint64, log *raft.Log) error {
 	tx, err := b.conn.Begin(false)
 	if err != nil {
@@ -158,40 +155,34 @@ func (b *BoltStore) GetLog(idx uint64, log *raft.Log) error {
 	return decodeMsgPack(val, log)
 }
 
-// StoreLog is used to store a single raft log
+// StoreLog 存储单条raft日志
 func (b *BoltStore) StoreLog(log *raft.Log) error {
 	return b.StoreLogs([]*raft.Log{log})
 }
 
-// StoreLogs is used to store a set of raft logs
+// StoreLogs 存储多条raft日志
 func (b *BoltStore) StoreLogs(logs []*raft.Log) error {
 	tx, err := b.conn.Begin(true)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
-
-	batchSize := 0
 	for _, log := range logs {
 		key := uint64ToBytes(log.Index)
 		val, err := encodeMsgPack(log)
 		if err != nil {
 			return err
 		}
-
-		logLen := val.Len()
 		bucket := tx.Bucket(dbLogs)
 		if err := bucket.Put(key, val.Bytes()); err != nil {
 			return err
 		}
-		batchSize += logLen
 	}
-
 
 	return tx.Commit()
 }
 
-// DeleteRange is used to delete logs within a given range inclusively.
+// DeleteRange 是用来删除一个给定范围内的日志，包括在内。
 func (b *BoltStore) DeleteRange(min, max uint64) error {
 	minKey := uint64ToBytes(min)
 
@@ -203,12 +194,12 @@ func (b *BoltStore) DeleteRange(min, max uint64) error {
 
 	curs := tx.Bucket(dbLogs).Cursor()
 	for k, _ := curs.Seek(minKey); k != nil; k, _ = curs.Next() {
-		// Handle out-of-range log index
+		// 处理超出范围的日志索引
 		if bytesToUint64(k) > max {
 			break
 		}
 
-		// Delete in-range log index
+		// 删除范围内的日志索引
 		if err := curs.Delete(); err != nil {
 			return err
 		}
@@ -217,7 +208,7 @@ func (b *BoltStore) DeleteRange(min, max uint64) error {
 	return tx.Commit()
 }
 
-// Set is used to set a key/value set outside of the raft log
+// Set 是用来在raft日志之外设置一个键/值集的。
 func (b *BoltStore) Set(k, v []byte) error {
 	tx, err := b.conn.Begin(true)
 	if err != nil {
@@ -233,7 +224,7 @@ func (b *BoltStore) Set(k, v []byte) error {
 	return tx.Commit()
 }
 
-// Get is used to retrieve a value from the k/v store by key
+// Get 获取键值数据
 func (b *BoltStore) Get(k []byte) ([]byte, error) {
 	tx, err := b.conn.Begin(false)
 	if err != nil {
@@ -250,12 +241,12 @@ func (b *BoltStore) Get(k []byte) ([]byte, error) {
 	return append([]byte(nil), val...), nil
 }
 
-// SetUint64 is like Set, but handles uint64 values
+// SetUint64 设置，但value是uint64
 func (b *BoltStore) SetUint64(key []byte, val uint64) error {
 	return b.Set(key, uint64ToBytes(val))
 }
 
-// GetUint64 is like Get, but handles uint64 values
+// GetUint64 返回uint64类型的数据
 func (b *BoltStore) GetUint64(key []byte) (uint64, error) {
 	val, err := b.Get(key)
 	if err != nil {
@@ -264,9 +255,7 @@ func (b *BoltStore) GetUint64(key []byte) (uint64, error) {
 	return bytesToUint64(val), nil
 }
 
-// Sync performs an fsync on the database file handle. This is not necessary
-// under normal operation unless NoSync is enabled, in which this forces the
-// database file to sync against the disk.
+// Sync 在数据库文件句柄上执行fsync。这在正常操作下是没有必要的，除非启用NoSync，在这种情况下，数据库文件会强制与磁盘同步。
 func (b *BoltStore) Sync() error {
 	return b.conn.Sync()
 }

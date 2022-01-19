@@ -470,7 +470,7 @@ func NewRaft(conf *Config, fsm FSM, logs LogStore, stable StableStore, snaps Sna
 		})
 	}
 
-	// Try to restore the current term.
+	// 尝试重置当前任期
 	currentTerm, err := stable.GetUint64(keyCurrentTerm)
 	if err != nil && err.Error() != "not found" {
 		return nil, fmt.Errorf("failed to load current term: %v", err)
@@ -744,7 +744,7 @@ func (r *Raft) ApplyLog(log Log, timeout time.Duration) ApplyFuture {
 	select {
 	case <-timer: // 发送超时
 		return errorFuture{ErrEnqueueTimeout}
-	case <-r.shutdownCh:// raft关闭
+	case <-r.shutdownCh: // raft关闭
 		return errorFuture{ErrRaftShutdown}
 	case r.applyCh <- logFuture:
 		return logFuture

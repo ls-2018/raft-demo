@@ -86,7 +86,7 @@ type NetworkTransport struct {
 
 	stream StreamLayer
 
-	// streamCtx is used to cancel existing connection handlers.
+	// streamCtx 是用来取消现有的连接处理程序。
 	streamCtx     context.Context
 	streamCancel  context.CancelFunc
 	streamCtxLock sync.RWMutex
@@ -105,7 +105,7 @@ type NetworkTransportConfig struct {
 	// Dialer
 	Stream StreamLayer
 
-	// MaxPool controls how many connections we will pool
+	// MaxPool 控制我们将存储多少个连接
 	MaxPool int
 
 	// Timeout is used to apply I/O deadlines. For InstallSnapshot, we multiply
@@ -151,19 +151,17 @@ type netPipeline struct {
 	shutdownLock sync.Mutex
 }
 
-// NewNetworkTransportWithConfig creates a new network transport with the given config struct
-func NewNetworkTransportWithConfig(
-	config *NetworkTransportConfig,
-) *NetworkTransport {
+// NewNetworkTransportWithConfig 用给定的配置结构创建一个新的网络传输。
+func NewNetworkTransportWithConfig(config *NetworkTransportConfig) *NetworkTransport {
 	if config.Logger == nil {
 		config.Logger = hclog.New(&hclog.LoggerOptions{
 			Name:   "raft-net",
-			Output: hclog.DefaultOutput,
-			Level:  hclog.DefaultLevel,
+			Output: hclog.DefaultOutput, //  os.Stderr
+			Level:  hclog.DefaultLevel,  // Info
 		})
 	}
 	trans := &NetworkTransport{
-		connPool:              make(map[ServerAddress][]*netConn),
+		connPool:              make(map[ServerAddress][]*netConn), // string= []*netConn{}
 		consumeCh:             make(chan RPC),
 		logger:                config.Logger,
 		maxPool:               config.MaxPool,
@@ -174,23 +172,14 @@ func NewNetworkTransportWithConfig(
 		serverAddressProvider: config.ServerAddressProvider,
 	}
 
-	// Create the connection context and then start our listener.
 	trans.setupStreamContext()
 	go trans.listen()
 
 	return trans
 }
 
-// NewNetworkTransport creates a new network transport with the given dialer
-// and listener. The maxPool controls how many connections we will pool. The
-// timeout is used to apply I/O deadlines. For InstallSnapshot, we multiply
-// the timeout by (SnapshotSize / TimeoutScale).
-func NewNetworkTransport(
-	stream StreamLayer,
-	maxPool int,
-	timeout time.Duration,
-	logOutput io.Writer,
-) *NetworkTransport {
+// NewNetworkTransport 用给定的拨号器和监听器创建一个新的网络传输
+func NewNetworkTransport(stream StreamLayer, maxPool int, timeout time.Duration, logOutput io.Writer) *NetworkTransport {
 	if logOutput == nil {
 		logOutput = os.Stderr
 	}
@@ -203,29 +192,20 @@ func NewNetworkTransport(
 	return NewNetworkTransportWithConfig(config)
 }
 
-// NewNetworkTransportWithLogger creates a new network transport with the given logger, dialer
-// and listener. The maxPool controls how many connections we will pool. The
-// timeout is used to apply I/O deadlines. For InstallSnapshot, we multiply
-// the timeout by (SnapshotSize / TimeoutScale).
-func NewNetworkTransportWithLogger(
-	stream StreamLayer,
-	maxPool int,
-	timeout time.Duration,
-	logger hclog.Logger,
-) *NetworkTransport {
+// NewNetworkTransportWithLogger  用给定的拨号器和监听器创建一个新的网络传输
+func NewNetworkTransportWithLogger(stream StreamLayer, maxPool int, timeout time.Duration, logger hclog.Logger) *NetworkTransport {
 	config := &NetworkTransportConfig{Stream: stream, MaxPool: maxPool, Timeout: timeout, Logger: logger}
 	return NewNetworkTransportWithConfig(config)
 }
 
-// setupStreamContext is used to create a new stream context. This should be
-// called with the stream lock held.
+// setupStreamContext 是用来创建一个StreamContext。在调用该功能时，应持有流锁。
 func (n *NetworkTransport) setupStreamContext() {
 	ctx, cancel := context.WithCancel(context.Background())
 	n.streamCtx = ctx
 	n.streamCancel = cancel
 }
 
-// getStreamContext is used retrieve the current stream context.
+// getStreamContext 是用来检索当前流的上下文。
 func (n *NetworkTransport) getStreamContext() context.Context {
 	n.streamCtxLock.RLock()
 	defer n.streamCtxLock.RUnlock()
@@ -768,7 +748,7 @@ func (n *netPipeline) Consumer() <-chan AppendFuture {
 	return n.doneCh
 }
 
-// Closed is used to shutdown the pipeline connection.
+// Close is used to shutdown the pipeline connection.
 func (n *netPipeline) Close() error {
 	n.shutdownLock.Lock()
 	defer n.shutdownLock.Unlock()

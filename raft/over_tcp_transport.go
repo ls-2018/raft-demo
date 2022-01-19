@@ -4,6 +4,7 @@ import (
 	"errors"
 	"github.com/hashicorp/go-hclog"
 	"io"
+	"log"
 	"net"
 	"time"
 )
@@ -41,8 +42,9 @@ func NewTCPTransportWithConfig(bindAddr string, advertise net.Addr, config *Netw
 	})
 }
 
+// 创建TCPStreamLayer，检验地址，调用transportCreator
 func newTCPTransport(bindAddr string, advertise net.Addr, transportCreator func(stream StreamLayer) *NetworkTransport) (*NetworkTransport, error) {
-	list, err := net.Listen("tcp", bindAddr)// 返回的是接口
+	list, err := net.Listen("tcp", bindAddr) // 返回的是接口
 	if err != nil {
 		return nil, err
 	}
@@ -58,14 +60,13 @@ func newTCPTransport(bindAddr string, advertise net.Addr, transportCreator func(
 		list.Close()
 		return nil, errNotTCP
 	}
-	if addr.IP == nil || addr.IP.IsUnspecified() {// 不是能0.0.0.0 或 ::
+	if addr.IP == nil || addr.IP.IsUnspecified() { // 不是能0.0.0.0 或 ::
 		list.Close()
+		log.Println("--------", addr)
 		return nil, errNotAdvertisable
 	}
 
-	// Create the network transport
-	trans := transportCreator(stream)
-	return trans, nil
+	return transportCreator(stream), nil
 }
 
 // Dial 与ServerAddress建立连接

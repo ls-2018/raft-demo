@@ -3,11 +3,10 @@ package raftboltdb
 import (
 	"bytes"
 	"encoding/binary"
-
 	"github.com/hashicorp/go-msgpack/codec"
 )
 
-// Decode reverses the encode operation on a byte slice input
+// 解码消息体。
 func decodeMsgPack(buf []byte, out interface{}) error {
 	r := bytes.NewBuffer(buf)
 	hd := codec.MsgpackHandle{}
@@ -15,7 +14,7 @@ func decodeMsgPack(buf []byte, out interface{}) error {
 	return dec.Decode(out)
 }
 
-// Encode writes an encoded object to a new bytes buffer
+// 编码消息体
 func encodeMsgPack(in interface{}) (*bytes.Buffer, error) {
 	buf := bytes.NewBuffer(nil)
 	hd := codec.MsgpackHandle{}
@@ -24,12 +23,12 @@ func encodeMsgPack(in interface{}) (*bytes.Buffer, error) {
 	return buf, err
 }
 
-// Converts bytes to an integer
+// 将数据转换成uint64值
 func bytesToUint64(b []byte) uint64 {
 	return binary.BigEndian.Uint64(b)
 }
 
-// Converts a uint to a byte slice
+// 将uint64数据转换成8字节数据
 func uint64ToBytes(u uint64) []byte {
 	buf := make([]byte, 8)
 	binary.BigEndian.PutUint64(buf, u)

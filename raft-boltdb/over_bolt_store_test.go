@@ -19,7 +19,6 @@ func testBoltStore(t testing.TB) *BoltStore {
 	}
 	os.Remove(fh.Name())
 
-	// Successfully creates and returns a store
 	store, err := NewBoltStore(fh.Name())
 	if err != nil {
 		t.Fatalf("err: %s", err)
@@ -35,16 +34,18 @@ func testRaftLog(idx uint64, data string) *raft.Log {
 	}
 }
 
+// OK
 func TestBoltStore_Implements(t *testing.T) {
 	var store interface{} = &BoltStore{}
 	if _, ok := store.(raft.StableStore); !ok {
-		t.Fatalf("BoltStore does not implement raft.StableStore")
+		t.Fatalf("BoltStore 没有实现raft.StableStore")
 	}
 	if _, ok := store.(raft.LogStore); !ok {
-		t.Fatalf("BoltStore does not implement raft.LogStore")
+		t.Fatalf("BoltStore 没有实现 raft.LogStore")
 	}
 }
 
+// ok
 func TestBoltOptionsTimeout(t *testing.T) {
 	fh, err := ioutil.TempFile("", "bolt")
 	if err != nil {
@@ -58,12 +59,12 @@ func TestBoltOptionsTimeout(t *testing.T) {
 			Timeout: time.Second / 10,
 		},
 	}
-	store, err := New(options)
+	var store *BoltStore
+	store, err = New(options)
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
 	defer store.Close()
-	// trying to open it again should timeout
 	doneCh := make(chan error, 1)
 	go func() {
 		_, err := New(options)
@@ -75,10 +76,11 @@ func TestBoltOptionsTimeout(t *testing.T) {
 			t.Errorf("Expected timeout error but got %v", err)
 		}
 	case <-time.After(5 * time.Second):
-		t.Errorf("Gave up waiting for timeout response")
+		t.Errorf("放弃了对超时响应的等待")
 	}
 }
 
+// ok
 func TestBoltOptionsReadOnly(t *testing.T) {
 	fh, err := ioutil.TempFile("", "bolt")
 	if err != nil {
@@ -89,12 +91,10 @@ func TestBoltOptionsReadOnly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("err: %s", err)
 	}
-	// Create the log
 	log := &raft.Log{
 		Data:  []byte("log1"),
 		Index: 1,
 	}
-	// Attempt to store the log
 	if err := store.StoreLog(log); err != nil {
 		t.Fatalf("err: %s", err)
 	}
@@ -117,17 +117,18 @@ func TestBoltOptionsReadOnly(t *testing.T) {
 		t.Fatalf("err: %s", err)
 	}
 
-	// Ensure the log comes back the same
+	// 确保回来的日志是一样的
 	if !reflect.DeepEqual(log, result) {
 		t.Errorf("bad: %v", result)
 	}
-	// Attempt to store the log, should fail on a read-only store
+	// 尝试存储日志，在只读存储中应该失败
 	err = roStore.StoreLog(log)
 	if err != bolt.ErrDatabaseReadOnly {
 		t.Errorf("expecting error %v, but got %v", bolt.ErrDatabaseReadOnly, err)
 	}
 }
 
+// ok
 func TestNewBoltStore(t *testing.T) {
 	fh, err := ioutil.TempFile("", "bolt")
 	if err != nil {
@@ -136,13 +137,11 @@ func TestNewBoltStore(t *testing.T) {
 	os.Remove(fh.Name())
 	defer os.Remove(fh.Name())
 
-	// Successfully creates and returns a store
 	store, err := NewBoltStore(fh.Name())
 	if err != nil {
 		t.Fatalf("err: %s", err)
 	}
 
-	// Ensure the file was created
 	if store.path != fh.Name() {
 		t.Fatalf("unexpected file path %q", store.path)
 	}
@@ -150,12 +149,10 @@ func TestNewBoltStore(t *testing.T) {
 		t.Fatalf("err: %s", err)
 	}
 
-	// Close the store so we can open again
 	if err := store.Close(); err != nil {
 		t.Fatalf("err: %s", err)
 	}
 
-	// Ensure our tables were created
 	db, err := bolt.Open(fh.Name(), dbFileMode, nil)
 	if err != nil {
 		t.Fatalf("err: %s", err)
@@ -172,6 +169,7 @@ func TestNewBoltStore(t *testing.T) {
 	}
 }
 
+// ok
 func TestBoltStore_FirstIndex(t *testing.T) {
 	store := testBoltStore(t)
 	defer store.Close()
@@ -206,6 +204,7 @@ func TestBoltStore_FirstIndex(t *testing.T) {
 	}
 }
 
+// ok
 func TestBoltStore_LastIndex(t *testing.T) {
 	store := testBoltStore(t)
 	defer store.Close()
@@ -240,6 +239,7 @@ func TestBoltStore_LastIndex(t *testing.T) {
 	}
 }
 
+// ok
 func TestBoltStore_GetLog(t *testing.T) {
 	store := testBoltStore(t)
 	defer store.Close()
@@ -271,6 +271,7 @@ func TestBoltStore_GetLog(t *testing.T) {
 	}
 }
 
+// ok
 func TestBoltStore_SetLog(t *testing.T) {
 	store := testBoltStore(t)
 	defer store.Close()
@@ -299,6 +300,7 @@ func TestBoltStore_SetLog(t *testing.T) {
 	}
 }
 
+// ok
 func TestBoltStore_SetLogs(t *testing.T) {
 	store := testBoltStore(t)
 	defer store.Close()
@@ -331,6 +333,7 @@ func TestBoltStore_SetLogs(t *testing.T) {
 	}
 }
 
+// ok
 func TestBoltStore_DeleteRange(t *testing.T) {
 	store := testBoltStore(t)
 	defer store.Close()
@@ -361,6 +364,7 @@ func TestBoltStore_DeleteRange(t *testing.T) {
 	}
 }
 
+// OK
 func TestBoltStore_Set_Get(t *testing.T) {
 	store := testBoltStore(t)
 	defer store.Close()
@@ -388,12 +392,13 @@ func TestBoltStore_Set_Get(t *testing.T) {
 	}
 }
 
+// OK
 func TestBoltStore_SetUint64_GetUint64(t *testing.T) {
 	store := testBoltStore(t)
 	defer store.Close()
 	defer os.Remove(store.path)
 
-	// Returns error on non-existent key
+	// 当key不存在，返回err
 	if _, err := store.GetUint64([]byte("bad")); err != ErrKeyNotFound {
 		t.Fatalf("expected not found error, got: %q", err)
 	}

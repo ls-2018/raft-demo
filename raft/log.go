@@ -74,7 +74,6 @@ type Log struct {
 	// 这库的客户端在添加、删除layer 时对其进行适当的修改。
 	// 这个值是日志的一部分，所以非常大的值可能会导致时间问题。
 
-
 	// N.B. It is _up to the client_ to handle upgrade paths. For instance if
 	// using this with go-raftchunking, the client should ensure that all Raft
 	// peers are using a version that can handle that extension before ever
@@ -152,6 +151,7 @@ func oldestLog(s LogStore) (Log, error) {
 	}
 	return l, nil
 }
+
 // 发送日志存储指标
 func emitLogStoreMetrics(s LogStore, prefix []string, interval time.Duration, stopCh <-chan struct{}) {
 	for {

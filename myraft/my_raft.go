@@ -18,22 +18,25 @@ func NewMyRaft(raftAddr, raftId, raftDir string) (*raft.Raft, *fsm.Fsm, error) {
 	config.LocalID = raft.ServerID(raftId)           // 类型转换
 	addr, err := net.ResolveTCPAddr("tcp", raftAddr) // string -> TCPAddr{}
 	if err != nil {
-		log.Fatalln(err)
+		log.Fatal(err)
 	}
 	// 传输端点
-	transport, err := raft.NewTCPTransport(raftAddr, addr, 2, 5*time.Second, os.Stderr)
+	var transport raft.Transport
+	transport, err = raft.NewTCPTransport(raftAddr, addr, 2, 5*time.Second, os.Stderr)
 	if err != nil {
-		log.Fatalln(err)
+		log.Fatal(err)
 	}
 	// 日志存储
-	logStore, err := raftboltdb.NewBoltStore(filepath.Join(raftDir, "raft-log.db"))
+	var logStore *raftboltdb.BoltStore
+	logStore, err = raftboltdb.NewBoltStore(filepath.Join(raftDir, "raft-log.db"))
 	if err != nil {
-		log.Fatalln(err)
+		log.Fatal(err)
 	}
 	// 表存储
-	stableStore, err := raftboltdb.NewBoltStore(filepath.Join(raftDir, "raft-stable.db"))
+	var stableStore *raftboltdb.BoltStore
+	stableStore, err = raftboltdb.NewBoltStore(filepath.Join(raftDir, "raft-stable.db"))
 	if err != nil {
-		log.Fatalln(err)
+		log.Fatal(err)
 	}
 	// 利用复制的日志
 	fm := fsm.NewFsm()
