@@ -210,9 +210,7 @@ func (r *Raft) runFSM() {
 	}
 }
 
-// fsmRestoreAndMeasure wraps the Restore call on an FSM to consistently measure
-// and report timing metrics. The caller is still responsible for calling Close
-// on the source in all cases.
+// fsmRestoreAndMeasure 包裹FSM上的Restore调用， 在所有情况下，调用者仍然负责在源上调用关闭。
 func fsmRestoreAndMeasure(fsm FSM, source io.ReadCloser) error {
 	if err := fsm.Restore(source); err != nil {
 		return err

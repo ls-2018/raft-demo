@@ -181,10 +181,10 @@ type Config struct {
 	// Logger
 	Logger hclog.Logger
 
-	// NoSnapshotRestoreOnStart controls if raft will restore a snapshot to the
-	// FSM on start. This is useful if your FSM recovers from other mechanisms
-	// than raft snapshotting. Snapshot metadata will still be used to initialize
-	// raft's configuration and index values.
+	// NoSnapshotRestoreOnStart
+	// 控制raft是否会在启动时恢复快照到FSM。如果你的FSM是从raft快照以外的其他机制中恢复的，这就很有用。
+	// 快照元数据仍将被用于初始化筏的配置和索引值。
+
 	NoSnapshotRestoreOnStart bool
 
 	// skipStartup 允许NewRaft()绕过所有的后台工作程序。

@@ -39,7 +39,7 @@ const (
 	//  },
 	//  "ConfigurationIndex": 1,
 	//  "Size": 2,
-	//  "CRC": "k5FZanXe1V0="
+	//  "CRC": "k5FZanXe1V0="     state.bin文件的crc64校验值，经过base64编码
 	//}
 	metaFilePath  = "meta.json"
 	stateFilePath = "state.bin"
@@ -323,12 +323,12 @@ func (f *FileSnapshotStore) readMeta(name string) (*fileSnapshotMeta, error) {
 	return meta, nil
 }
 
-// Open takes a snapshot ID and returns a ReadCloser for that snapshot.
+// Open 接受一个快照ID并返回一个ReadCloser。一旦关闭被调用，就认为不再需要该快照了。
 func (f *FileSnapshotStore) Open(id string) (*SnapshotMeta, io.ReadCloser, error) {
-	// Get the metadata
+	// 获取元数据
 	meta, err := f.readMeta(id)
 	if err != nil {
-		f.logger.Error("failed to get meta data to open snapshot", "error", err)
+		f.logger.Error("获取快照元数据失败", "error", err)
 		return nil, nil, err
 	}
 
@@ -336,22 +336,21 @@ func (f *FileSnapshotStore) Open(id string) (*SnapshotMeta, io.ReadCloser, error
 	statePath := filepath.Join(f.path, id, stateFilePath)
 	fh, err := os.Open(statePath)
 	if err != nil {
-		f.logger.Error("failed to open state file", "error", err)
+		f.logger.Error("打开状态文件失败", "error", err)
 		return nil, nil, err
 	}
 
-	// Create a CRC64 hash
 	stateHash := crc64.New(crc64.MakeTable(crc64.ECMA))
 
-	// Compute the hash
+	// 计算hash
 	_, err = io.Copy(stateHash, fh)
 	if err != nil {
-		f.logger.Error("failed to read state file", "error", err)
+		f.logger.Error("读取状态文件失败", "error", err)
 		fh.Close()
 		return nil, nil, err
 	}
 
-	// Verify the hash
+	// 验证hash
 	computed := stateHash.Sum(nil)
 	if bytes.Compare(meta.CRC, computed) != 0 {
 		f.logger.Error("CRC checksum failed", "stored", meta.CRC, "computed", computed)
@@ -558,7 +557,7 @@ func (s snapMetaSlice) Less(i, j int) bool {
 	if s[i].Index != s[j].Index {
 		return s[i].Index < s[j].Index
 	}
-	// 版本
+	// 版本=文件夹的名字
 	return s[i].ID < s[j].ID
 }
 

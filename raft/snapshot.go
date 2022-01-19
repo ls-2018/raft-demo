@@ -46,8 +46,7 @@ type SnapshotStore interface {
 	// List 是用来列出商店中的可用快照。它应该按降序返回，以最高的索引为先。
 	List() ([]*SnapshotMeta, error)
 
-	// Open takes a snapshot ID and provides a ReadCloser. Once close is
-	// called it is assumed the snapshot is no longer needed.
+	// Open 接受一个快照ID并返回一个ReadCloser。一旦关闭被调用，就认为不再需要该快照了。
 	Open(id string) (*SnapshotMeta, io.ReadCloser, error)
 }
 

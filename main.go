@@ -77,10 +77,18 @@ func main() {
 	http.HandleFunc("/get", httpServer.Get)
 	//go func() {
 	//	time.Sleep(time.Second * 10)
-	//	for i := 0; i < 10; i++ {
-	//		future :=httpServer.ctx.Apply([]byte(fmt.Sprintf("%d", i)), 5*time.Second)
-	//		if err := future.Error(); err != nil {
+	//	for i := 0; i < 100; i++ {
+	//		data := "set" + "," + fmt.Sprintf("%d", i) + "," + fmt.Sprintf("%d", i)
+	//
+	//		value := httpServer.fsm.DataBase.Get(fmt.Sprintf("%d", i))
+	//		if value != "" {
+	//			fmt.Println("---->", data)
+	//		} else {
+	//			future := httpServer.ctx.Apply([]byte(data), 5*time.Second)
+	//			if err := future.Error(); err != nil {
+	//			}
 	//		}
+	//
 	//	}
 	//	snapshot, err := httpServer.ctx.TakeSnapshot()
 	//	if err != nil {

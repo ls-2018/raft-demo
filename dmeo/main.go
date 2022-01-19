@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/boltdb/bolt"
 	"github.com/hashicorp/go-hclog"
+	"hash/crc64"
 	"os"
 	"time"
 )
@@ -12,6 +13,19 @@ import (
 var dbConf = []byte("MyBucket")
 
 func main() {
+	fmt.Println(crc64.New(crc64.MakeTable(crc64.ECMA)).Sum64())
+	fmt.Println(crc64.New(crc64.MakeTable(crc64.ECMA)).Sum64())
+	a:=[]uint8{
+		147,
+		145,
+		89,
+		106,
+		117,
+		222,
+		213,
+		93,
+	}
+	fmt.Println(string(a ))
 }
 func mai2n() {
 	logger := hclog.New(&hclog.LoggerOptions{

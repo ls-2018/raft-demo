@@ -1405,14 +1405,19 @@ func (r *Raft) appendEntries(rpc RPC, a *AppendEntriesRequest) {
 	return
 }
 
-// processConfigurationLogEntry takes a log entry and updates the latest
-// configuration if the entry results in a new configuration. This must only be
-// called from the main thread, or from NewRaft() before any threads have begun.
+// processConfigurationLogEntry
+// 从logState中获取快照中没有的数据,然后对每一个log 调用此函数
 func (r *Raft) processConfigurationLogEntry(entry *Log) error {
+	fmt.Printf("%+v\n",*entry)
 	switch entry.Type {
-	case LogConfiguration:
+	case LogConfiguration: //
 		r.setCommittedConfiguration(r.configurations.latest, r.configurations.latestIndex)
 		r.setLatestConfiguration(DecodeConfiguration(entry.Data), entry.Index)
+		//r.configurations.committed = r.configurations.latest
+		//r.configurations.committedIndex = r.configurations.latestIndex
+		//r.configurations.latest = DecodeConfiguration(entry.Data)
+		//r.configurations.latestIndex = entry.Index
+		//r.latestConfiguration.Store(DecodeConfiguration(entry.Data).Clone())
 
 	case LogAddPeerDeprecated, LogRemovePeerDeprecated:
 		r.setCommittedConfiguration(r.configurations.latest, r.configurations.latestIndex)
@@ -1815,14 +1820,14 @@ func (r *Raft) timeoutNow(rpc RPC, req *TimeoutNowRequest) {
 	rpc.Respond(&TimeoutNowResponse{}, nil)
 }
 
-// setLatestConfiguration stores the latest configuration and updates a copy of it.
+// setLatestConfiguration 储存最新的配置并更新其副本。
 func (r *Raft) setLatestConfiguration(c Configuration, i uint64) {
 	r.configurations.latest = c
 	r.configurations.latestIndex = i
 	r.latestConfiguration.Store(c.Clone())
 }
 
-// setCommittedConfiguration stores the committed configuration.
+// setCommittedConfiguration 存储已提交的配置。
 func (r *Raft) setCommittedConfiguration(c Configuration, i uint64) {
 	r.configurations.committed = c
 	r.configurations.committedIndex = i

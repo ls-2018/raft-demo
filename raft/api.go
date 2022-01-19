@@ -460,7 +460,7 @@ func NewRaft(conf *Config, fsm FSM, logs LogStore, stable StableStore, snaps Sna
 	}
 
 	// 获取最新的日志条目
-	var lastLog Log
+	var lastLog Log // logState最新的数据
 	if lastIndex > 0 {
 		if err = logs.GetLog(lastIndex, &lastLog); err != nil {
 			return nil, fmt.Errorf("获取最新的日志条目失败 at index %d: %v", lastIndex, err)
@@ -517,15 +517,18 @@ func NewRaft(conf *Config, fsm FSM, logs LogStore, stable StableStore, snaps Sna
 	r.setCurrentTerm(currentTerm)             // db + memory
 	r.setLastLog(lastLog.Index, lastLog.Term) // memory
 
-	// 如果有的话，尝试恢复快照。
+	// 如果有的话，尝试恢复快照。只对最新的快照进行恢复   【全量快照】
 	if err := r.restoreSnapshot(); err != nil {
 		return nil, err
 	}
 
-	// Scan through the log for any configuration change entries.
+	// 扫描日志中的任何配置更改条目。
 	snapshotIndex, _ := r.getLastSnapshot()
+	//  如果快照的数据< 当前日志的数据
 	for index := snapshotIndex + 1; index <= lastLog.Index; index++ {
+		fmt.Println("============================================")
 		var entry Log
+		// 从logState中获取快照中没有的数据
 		if err := r.logs.GetLog(index, &entry); err != nil {
 			r.logger.Error("failed to get log", "index", index, "error", err)
 			panic(err)
@@ -558,41 +561,42 @@ func NewRaft(conf *Config, fsm FSM, logs LogStore, stable StableStore, snaps Sna
 func (r *Raft) restoreSnapshot() error {
 	snapshots, err := r.snapshots.List()
 	if err != nil {
-		r.logger.Error("failed to list snapshots", "error", err)
+		r.logger.Error("获取快照列表失败", "error", err)
 		return err
 	}
 
 	// 尝试按照从新到旧的顺序加载
 	for _, snapshot := range snapshots {
 		if !r.config().NoSnapshotRestoreOnStart {
+			// 默认会走到这里
 			_, source, err := r.snapshots.Open(snapshot.ID)
 			if err != nil {
-				r.logger.Error("failed to open snapshot", "id", snapshot.ID, "error", err)
+				r.logger.Error("打开快照失败", "id", snapshot.ID, "error", err)
 				continue
 			}
 
 			if err := fsmRestoreAndMeasure(r.fsm, source); err != nil {
 				source.Close()
-				r.logger.Error("failed to restore snapshot", "id", snapshot.ID, "error", err)
+				r.logger.Error("重置快照失败", "id", snapshot.ID, "error", err)
 				continue
 			}
 			source.Close()
 
-			r.logger.Info("restored from snapshot", "id", snapshot.ID)
+			r.logger.Info("已恢复快照", "id", snapshot.ID)
 		}
 
-		// Update the lastApplied so we don't replay old logs
+		// 更新lastApplied，这样我们就不会重放旧的日志了。
 		r.setLastApplied(snapshot.Index)
 
-		// Update the last stable snapshot info
+		// 更新最后的快照信息
 		r.setLastSnapshot(snapshot.Index, snapshot.Term)
 
-		// Update the configuration
+		// 更新配置
 		var conf Configuration
 		var index uint64
 		if snapshot.Version > 0 {
-			conf = snapshot.Configuration
-			index = snapshot.ConfigurationIndex
+			conf = snapshot.Configuration  // 集群信息
+			index = snapshot.ConfigurationIndex// 1
 		} else {
 			var err error
 			if conf, err = decodePeers(snapshot.Peers, r.trans); err != nil {

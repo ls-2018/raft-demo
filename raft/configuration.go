@@ -348,8 +348,7 @@ func EncodeConfiguration(configuration Configuration) []byte {
 	return buf.Bytes()
 }
 
-// DecodeConfiguration deserializes a Configuration using MsgPack, or panics on
-// errors.
+// DecodeConfiguration 使用MsgPack对配置进行反序列化，或在出现错误时panic。
 func DecodeConfiguration(buf []byte) Configuration {
 	var configuration Configuration
 	if err := decodeMsgPack(buf, &configuration); err != nil {

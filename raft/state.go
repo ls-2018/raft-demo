@@ -42,7 +42,7 @@ type raftState struct {
 	// protects 4 next fields
 	lastLock sync.Mutex
 
-	// Cache the latest snapshot index/term
+	// 缓存最新快照的  index\term
 	lastSnapshotIndex uint64
 	lastSnapshotTerm  uint64
 
