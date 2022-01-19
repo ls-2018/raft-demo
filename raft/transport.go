@@ -51,10 +51,7 @@ type Transport interface {
 	// DecodePeer is used to deserialize a peer's address.
 	DecodePeer([]byte) ServerAddress
 
-	// SetHeartbeatHandler is used to setup a heartbeat handler
-	// as a fast-pass. This is to avoid head-of-line blocking from
-	// disk IO. If a Transport does not support this, it can simply
-	// ignore the call, and push the heartbeat onto the Consumer channel.
+	// SetHeartbeatHandler 是用来设置一个心跳处理程序作为一个快速通道。这是为了避免磁盘IO的线头阻塞。如果Transport不支持这一点，它可以简单地忽略调用，并将心跳推到消费者通道上。
 	SetHeartbeatHandler(cb func(rpc RPC))
 
 	// TimeoutNow is used to start a leadership transfer to the target node.

@@ -122,19 +122,18 @@ func (r *Raft) requestConfigChange(req configurationChangeRequest, timeout time.
 	}
 }
 
-// run is a long running goroutine that runs the Raft FSM.
+// run 是一个运行Raft FSM的长期运行的goroutine。
 func (r *Raft) run() {
 	for {
-		// Check if we are doing a shutdown
 		select {
 		case <-r.shutdownCh:
-			// Clear the leader to prevent forwarding
+			// 清除领导，防止转发
 			r.setLeader("")
 			return
 		default:
 		}
 
-		// Enter into a sub-FSM
+		// 进入一个子FSM
 		switch r.getState() {
 		case Follower:
 			r.runFollower()
@@ -146,37 +145,30 @@ func (r *Raft) run() {
 	}
 }
 
-// runFollower runs the FSM for a follower.
+// runFollower 为一个flower运行FSM。
 func (r *Raft) runFollower() {
 	didWarn := false
-	r.logger.Info("entering follower state", "follower", r, "leader", r.Leader())
-	heartbeatTimer := randomTimeout(r.config().HeartbeatTimeout)
+	r.logger.Info("进入 follower state", "follower", r, "leader", r.Leader())
+	heartbeatTimer := randomTimeout(r.config().HeartbeatTimeout) // 定时器
 
 	for r.getState() == Follower {
 		select {
 		case rpc := <-r.rpcCh:
 			r.processRPC(rpc)
+		//-----------------------------------
+		// 拒绝任何操作，当不是leader
 
 		case c := <-r.configurationChangeCh:
-			// Reject any operations since we are not the leader
 			c.respond(ErrNotLeader)
-
 		case a := <-r.applyCh:
-			// Reject any operations since we are not the leader
 			a.respond(ErrNotLeader)
-
 		case v := <-r.verifyCh:
-			// Reject any operations since we are not the leader
 			v.respond(ErrNotLeader)
-
 		case r := <-r.userRestoreCh:
-			// Reject any restores since we are not the leader
 			r.respond(ErrNotLeader)
-
 		case r := <-r.leadershipTransferCh:
-			// Reject any operations since we are not the leader
 			r.respond(ErrNotLeader)
-
+		//-----------------------------------
 		case c := <-r.configurationsCh:
 			c.configurations = r.configurations.Clone()
 			c.respond(nil)
@@ -185,11 +177,11 @@ func (r *Raft) runFollower() {
 			b.respond(r.liveBootstrap(b.configuration))
 
 		case <-heartbeatTimer:
-			// Restart the heartbeat timer
+			// 重新启动心跳定时器
 			hbTimeout := r.config().HeartbeatTimeout
 			heartbeatTimer = randomTimeout(hbTimeout)
 
-			// Check if we have had a successful contact
+			// 检查我们是否有成功的联系
 			lastContact := r.LastContact()
 			if time.Now().Sub(lastContact) < hbTimeout {
 				continue
@@ -1243,24 +1235,21 @@ func (r *Raft) processRPC(rpc RPC) {
 	}
 }
 
-// processHeartbeat is a special handler used just for heartbeat requests
-// so that they can be fast-pathed if a transport supports it. This must only
-// be called from the main thread.
+// processHeartbeat 是一个专门用于心跳请求的特殊处理程序，以便在传输支持的情况下可以快速处理它们。它只能从主线程中调用。
 func (r *Raft) processHeartbeat(rpc RPC) {
 
-	// Check if we are shutdown, just ignore the RPC
 	select {
 	case <-r.shutdownCh:
 		return
 	default:
 	}
 
-	// Ensure we are only handling a heartbeat
+	// 确保我们只处理心跳的问题
 	switch cmd := rpc.Command.(type) {
 	case *AppendEntriesRequest:
 		r.appendEntries(rpc, cmd)
 	default:
-		r.logger.Error("expected heartbeat, got", "command", hclog.Fmt("%#v", rpc.Command))
+		r.logger.Error("预期的心跳, got", "command", hclog.Fmt("%#v", rpc.Command))
 		rpc.Respond(nil, fmt.Errorf("unexpected command"))
 	}
 }
@@ -1408,7 +1397,7 @@ func (r *Raft) appendEntries(rpc RPC, a *AppendEntriesRequest) {
 // processConfigurationLogEntry
 // 从logState中获取快照中没有的数据,然后对每一个log 调用此函数
 func (r *Raft) processConfigurationLogEntry(entry *Log) error {
-	fmt.Printf("%+v\n",*entry)
+	fmt.Printf("%+v\n", *entry)
 	switch entry.Type {
 	case LogConfiguration: //
 		r.setCommittedConfiguration(r.configurations.latest, r.configurations.latestIndex)

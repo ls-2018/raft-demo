@@ -212,9 +212,7 @@ func (n *NetworkTransport) getStreamContext() context.Context {
 	return n.streamCtx
 }
 
-// SetHeartbeatHandler is used to setup a heartbeat handler
-// as a fast-pass. This is to avoid head-of-line blocking from
-// disk IO.
+// SetHeartbeatHandler 是用来设置一个心跳处理程序作为一个快速通道。这是为了避免磁盘IO的线头阻塞。
 func (n *NetworkTransport) SetHeartbeatHandler(cb func(rpc RPC)) {
 	n.heartbeatFnLock.Lock()
 	defer n.heartbeatFnLock.Unlock()

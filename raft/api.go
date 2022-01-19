@@ -373,8 +373,7 @@ func RecoverCluster(conf *Config, fsm FSM, logs LogStore, stable StableStore,
 // GetConfiguration returns the persisted configuration of the Raft cluster
 // without starting a Raft instance or connecting to the cluster. This function
 // has identical behavior to Raft.GetConfiguration.
-func GetConfiguration(conf *Config, fsm FSM, logs LogStore, stable StableStore,
-	snaps SnapshotStore, trans Transport) (Configuration, error) {
+func GetConfiguration(conf *Config, fsm FSM, logs LogStore, stable StableStore, snaps SnapshotStore, trans Transport) (Configuration, error) {
 	conf.skipStartup = true
 	r, err := NewRaft(conf, fsm, logs, stable, snaps, trans)
 	if err != nil {
@@ -533,23 +532,22 @@ func NewRaft(conf *Config, fsm FSM, logs LogStore, stable StableStore, snaps Sna
 			r.logger.Error("failed to get log", "index", index, "error", err)
 			panic(err)
 		}
+		// 更新已提交、未提交的一些信息
 		if err := r.processConfigurationLogEntry(&entry); err != nil {
 			return nil, err
 		}
 	}
-	r.logger.Info("initial configuration",
+	r.logger.Info("初始化配置",
 		"index", r.configurations.latestIndex,
 		"servers", hclog.Fmt("%+v", r.configurations.latest.Servers))
 
-	// Setup a heartbeat fast-path to avoid head-of-line
-	// blocking where possible. It MUST be safe for this
-	// to be called concurrently with a blocking RPC.
+	// 设置一个心跳快速路径，尽可能避免线头阻塞。这必须是安全的，因为它可以与一个阻塞的RPC同时调用。
 	trans.SetHeartbeatHandler(r.processHeartbeat)
-
+	// 默认为false
 	if conf.skipStartup {
 		return r, nil
 	}
-	// Start the background work.
+	// 启动后台worker
 	r.goFunc(r.run)
 	r.goFunc(r.runFSM)
 	r.goFunc(r.runSnapshots)
@@ -595,8 +593,8 @@ func (r *Raft) restoreSnapshot() error {
 		var conf Configuration
 		var index uint64
 		if snapshot.Version > 0 {
-			conf = snapshot.Configuration  // 集群信息
-			index = snapshot.ConfigurationIndex// 1
+			conf = snapshot.Configuration       // 集群信息
+			index = snapshot.ConfigurationIndex // 1
 		} else {
 			var err error
 			if conf, err = decodePeers(snapshot.Peers, r.trans); err != nil {

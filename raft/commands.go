@@ -1,41 +1,36 @@
 package raft
 
-// RPCHeader is a common sub-structure used to pass along protocol version and
-// other information about the cluster. For older Raft implementations before
-// versioning was added this will default to a zero-valued structure when read
-// by newer Raft versions.
+// RPCHeader 是一个公共的子结构，用于传递协议版本和其他关于集群的信息。
+// 对于加入版本控制之前的旧版Raft实现，当被新版Raft读取时，它将默认为一个零值结构。
 type RPCHeader struct {
-	// ProtocolVersion is the version of the protocol the sender is
-	// speaking.
 	ProtocolVersion ProtocolVersion
 }
 
-// WithRPCHeader is an interface that exposes the RPC header.
+// WithRPCHeader 暴露rpc头信息
 type WithRPCHeader interface {
 	GetRPCHeader() RPCHeader
 }
 
-// AppendEntriesRequest is the command used to append entries to the
-// replicated log.
+// AppendEntriesRequest 是用于向复制的日志追加条目的命令。
 type AppendEntriesRequest struct {
 	RPCHeader
 
-	// Provide the current term and leader
+	// 提供当前的任期和leader
 	Term   uint64
 	Leader []byte
 
-	// Provide the previous entries for integrity checking
+	// 提供以前的条目进行完整性检查
 	PrevLogEntry uint64
 	PrevLogTerm  uint64
 
-	// New entries to commit
+	// 新提交的日志条目
 	Entries []*Log
 
-	// Commit index on the leader
+	// leader commit的索引
 	LeaderCommitIndex uint64
 }
 
-// GetRPCHeader - See WithRPCHeader.
+// GetRPCHeader - 返回RPCHeader
 func (r *AppendEntriesRequest) GetRPCHeader() RPCHeader {
 	return r.RPCHeader
 }
