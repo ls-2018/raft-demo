@@ -75,6 +75,20 @@ func main() {
 
 	http.HandleFunc("/set", httpServer.Set)
 	http.HandleFunc("/get", httpServer.Get)
+	//go func() {
+	//	time.Sleep(time.Second * 10)
+	//	for i := 0; i < 10; i++ {
+	//		future :=httpServer.ctx.Apply([]byte(fmt.Sprintf("%d", i)), 5*time.Second)
+	//		if err := future.Error(); err != nil {
+	//		}
+	//	}
+	//	snapshot, err := httpServer.ctx.TakeSnapshot()
+	//	if err != nil {
+	//		return
+	//	}
+	//	fmt.Println(snapshot)
+	//
+	//}()
 	http.ListenAndServe(httpAddr, nil)
 
 	// 关闭raft

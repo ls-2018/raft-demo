@@ -84,8 +84,7 @@ func (e errorFuture) Index() uint64 {
 	return 0
 }
 
-// deferError can be embedded to allow a future
-// to provide an error in the future.
+// deferError  可以被嵌入以允许 提供一个错误
 type deferError struct {
 	err        error
 	errCh      chan error
@@ -99,13 +98,10 @@ func (d *deferError) init() {
 
 func (d *deferError) Error() error {
 	if d.err != nil {
-		// Note that when we've received a nil error, this
-		// won't trigger, but the channel is closed after
-		// send so we'll still return nil below.
 		return d.err
 	}
 	if d.errCh == nil {
-		panic("waiting for response on nil channel")
+		panic("在一个空channel上等待响应")
 	}
 	select {
 	case d.err = <-d.errCh:
@@ -249,8 +245,7 @@ type leadershipTransferFuture struct {
 	Address *ServerAddress
 }
 
-// configurationsFuture is used to retrieve the current configurations. This is
-// used to allow safe access to this information outside of the main thread.
+// configurationsFuture 是用来检索当前的配置的。这是 用来允许在主线程之外安全地访问这些信息。
 type configurationsFuture struct {
 	deferError
 	configurations configurations

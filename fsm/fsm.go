@@ -77,4 +77,7 @@ func (d *database) Persist(sink raft.SnapshotSink) error {
 	return nil
 }
 
-func (d *database) Release() {}
+// Release 打完快照后要做的事情
+func (d *database) Release() {
+
+}

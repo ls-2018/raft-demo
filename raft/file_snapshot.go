@@ -20,8 +20,27 @@ import (
 )
 
 const (
-	testPath      = "permTest"
-	snapPath      = "snapshots"
+	testPath = "permTest"
+	snapPath = "snapshots"
+	// meta.json = {
+	//  "Version": 1,
+	//  "ID": "2-12-1642579476602",
+	//  "Index": 12,
+	//  "Term": 2,
+	//  "Peers": "ka8xMjcuMC4wLjE6MTAwMDA=",
+	//  "Configuration": {
+	//    "Servers": [
+	//      {
+	//        "Suffrage": 0,
+	//        "ID": "1",
+	//        "Address": "127.0.0.1:10000"
+	//      }
+	//    ]
+	//  },
+	//  "ConfigurationIndex": 1,
+	//  "Size": 2,
+	//  "CRC": "k5FZanXe1V0="
+	//}
 	metaFilePath  = "meta.json"
 	stateFilePath = "state.bin"
 	tmpSuffix     = ".tmp"
@@ -217,9 +236,9 @@ func (f *FileSnapshotStore) Create(version SnapshotVersion, index, term uint64,
 	return sink, nil
 }
 
-// List returns available snapshots in the store.
+// List 返回存储的可用快照。
 func (f *FileSnapshotStore) List() ([]*SnapshotMeta, error) {
-	// Get the eligible snapshots
+	// 获取符合条件的快照
 	snapshots, err := f.getSnapshots()
 	if err != nil {
 		f.logger.Error("failed to get snapshots", "error", err)
@@ -236,54 +255,53 @@ func (f *FileSnapshotStore) List() ([]*SnapshotMeta, error) {
 	return snapMeta, nil
 }
 
-// getSnapshots returns all the known snapshots.
+// getSnapshots 返回所有已知的快照。
 func (f *FileSnapshotStore) getSnapshots() ([]*fileSnapshotMeta, error) {
-	// Get the eligible snapshots
 	snapshots, err := ioutil.ReadDir(f.path)
 	if err != nil {
-		f.logger.Error("failed to scan snapshot directory", "error", err)
+		f.logger.Error("打开快照目录失败", "error", err)
 		return nil, err
 	}
 
-	// Populate the metadata
+	// 填充元数据
 	var snapMeta []*fileSnapshotMeta
+	//[]*fileSnapshotMeta
 	for _, snap := range snapshots {
-		// Ignore any files
+		// 忽略文件
 		if !snap.IsDir() {
 			continue
 		}
 
-		// Ignore any temporary snapshots
+		// 忽略任何临时快照
 		dirName := snap.Name()
-		if strings.HasSuffix(dirName, tmpSuffix) {
-			f.logger.Warn("found temporary snapshot", "name", dirName)
+		if strings.HasSuffix(dirName, tmpSuffix) { // 后缀
+			f.logger.Warn("发现临时快照", "name", dirName)
 			continue
 		}
 
-		// Try to read the meta data
+		// 尝试读取元数据
 		meta, err := f.readMeta(dirName)
 		if err != nil {
-			f.logger.Warn("failed to read metadata", "name", dirName, "error", err)
+			f.logger.Warn("读取元数据失败", "name", dirName, "error", err)
 			continue
 		}
 
-		// Make sure we can understand this version.
+		// 快照的版本只能是0,1
 		if meta.Version < SnapshotVersionMin || meta.Version > SnapshotVersionMax {
-			f.logger.Warn("snapshot version not supported", "name", dirName, "version", meta.Version)
+			f.logger.Warn("快照版本不支持", "name", dirName, "version", meta.Version)
 			continue
 		}
 
-		// Append, but only return up to the retain count
 		snapMeta = append(snapMeta, meta)
 	}
 
-	// Sort the snapshot, reverse so we get new -> old
-	sort.Sort(sort.Reverse(snapMetaSlice(snapMeta)))
+	// snapMeta排序，使最新的快照，到前面来
+	sort.Sort(sort.Reverse(snapMetaSlice(snapMeta))) // snapMeta 在append时发生了变化，需要转换一下
 
 	return snapMeta, nil
 }
 
-// readMeta is used to read the meta data for a given named backup
+// readMeta 用来读取一个给定的命名的备份的元数据
 func (f *FileSnapshotStore) readMeta(name string) (*fileSnapshotMeta, error) {
 	// Open the meta file
 	metaPath := filepath.Join(f.path, name, metaFilePath)
@@ -526,18 +544,21 @@ func (s *FileSnapshotSink) writeMeta() error {
 	return nil
 }
 
-// Implement the sort interface for []*fileSnapshotMeta.
+// Len 实现排序接口 for []*fileSnapshotMeta.
 func (s snapMetaSlice) Len() int {
 	return len(s)
 }
 
 func (s snapMetaSlice) Less(i, j int) bool {
+	// 任期
 	if s[i].Term != s[j].Term {
 		return s[i].Term < s[j].Term
 	}
+	// 索引
 	if s[i].Index != s[j].Index {
 		return s[i].Index < s[j].Index
 	}
+	// 版本
 	return s[i].ID < s[j].ID
 }
 

@@ -141,15 +141,13 @@ type configurationChangeRequest struct {
 // which LogCabin uses, is to track every configuration change in the
 // log.
 type configurations struct {
-	// committed is the latest configuration in the log/snapshot that has been
-	// committed (the one with the largest index).
+	// committed 最新的【日志、快照】配置 且已提交的
 	committed Configuration
-	// committedIndex is the log index where 'committed' was written.
+	// committedIndex 已经提交了的日志索引
 	committedIndex uint64
-	// latest is the latest configuration in the log/snapshot (may be committed
-	// or uncommitted)
+	// latest 最新的【日志、快照】配置   不知道有没有提交
 	latest Configuration
-	// latestIndex is the log index where 'latest' was written.
+	// latestIndex 最新的日志索引、 不知道有没有提交
 	latestIndex uint64
 }
 

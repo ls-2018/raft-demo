@@ -48,9 +48,8 @@ var (
 	// ErrEnqueueTimeout is returned when a command fails due to a timeout.
 	ErrEnqueueTimeout = errors.New("timed out enqueuing operation")
 
-	// ErrNothingNewToSnapshot is returned when trying to create a snapshot
-	// but there's nothing new commited to the FSM since we started.
-	ErrNothingNewToSnapshot = errors.New("nothing new to snapshot")
+	// ErrNothingNewToSnapshot 当试图创建一个快照时返回，但自从我们开始以来，没有任何新的东西被输入到FSM。
+	ErrNothingNewToSnapshot = errors.New("没有新的数据进行打快照")
 
 	// ErrUnsupportedProtocol is returned when an operation is attempted
 	// that's not supported by the current protocol version.
@@ -518,7 +517,7 @@ func NewRaft(conf *Config, fsm FSM, logs LogStore, stable StableStore, snaps Sna
 	r.setCurrentTerm(currentTerm)             // db + memory
 	r.setLastLog(lastLog.Index, lastLog.Term) // memory
 
-	// Attempt to restore a snapshot if there are any.
+	// 如果有的话，尝试恢复快照。
 	if err := r.restoreSnapshot(); err != nil {
 		return nil, err
 	}
@@ -554,9 +553,8 @@ func NewRaft(conf *Config, fsm FSM, logs LogStore, stable StableStore, snaps Sna
 	return r, nil
 }
 
-// restoreSnapshot attempts to restore the latest snapshots, and fails if none
-// of them can be restored. This is called at initialization time, and is
-// completely unsafe to call at any other time.
+// restoreSnapshot 试图恢复最新的快照，如果没有一个能被恢复就会失败。
+// 这是在初始化时调用的，在其他任何时候调用都是不安全的。
 func (r *Raft) restoreSnapshot() error {
 	snapshots, err := r.snapshots.List()
 	if err != nil {
@@ -564,7 +562,7 @@ func (r *Raft) restoreSnapshot() error {
 		return err
 	}
 
-	// Try to load in order of newest to oldest
+	// 尝试按照从新到旧的顺序加载
 	for _, snapshot := range snapshots {
 		if !r.config().NoSnapshotRestoreOnStart {
 			_, source, err := r.snapshots.Open(snapshot.ID)
@@ -609,7 +607,7 @@ func (r *Raft) restoreSnapshot() error {
 		return nil
 	}
 
-	// If we had snapshots and failed to load them, its an error
+	// 如果我们有快照，但未能加载它们，就会出现错误
 	if len(snapshots) > 0 {
 		return fmt.Errorf("failed to load any existing snapshots")
 	}

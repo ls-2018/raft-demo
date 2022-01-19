@@ -99,9 +99,9 @@ const (
 type SnapshotVersion int
 
 const (
-	// SnapshotVersionMin is the minimum snapshot version
+	// SnapshotVersionMin 快照最小版本
 	SnapshotVersionMin SnapshotVersion = 0
-	// SnapshotVersionMax is the maximum snapshot version
+	// SnapshotVersionMax 快照最大版本
 	SnapshotVersionMax = 1
 )
 

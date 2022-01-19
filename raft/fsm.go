@@ -48,14 +48,13 @@ type FSMSnapshot interface {
 	// and call sink.Close() when finished or call sink.Cancel() on error.
 	Persist(sink SnapshotSink) error
 
-	// Release is invoked when we are finished with the snapshot.
+	// Release 是在我们完成快照后调用的。
 	Release()
 }
 
-// runFSM is a long running goroutine responsible for applying logs
-// to the FSM. This is done async of other logs since we don't want
-// the FSM to block our internal operations.
+// runFSM 是一个长期运行的Goroutine，负责将日志应用到FSM中。这是与其他日志同步进行的，因为我们不希望FSM阻塞我们的内部操作。
 func (r *Raft) runFSM() {
+	//最新索引、最新任期
 	var lastIndex, lastTerm uint64
 
 	batchingFSM, batchingEnabled := r.fsm.(BatchingFSM)

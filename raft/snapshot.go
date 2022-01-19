@@ -43,8 +43,7 @@ type SnapshotStore interface {
 	Create(version SnapshotVersion, index, term uint64, configuration Configuration,
 		configurationIndex uint64, trans Transport) (SnapshotSink, error)
 
-	// List is used to list the available snapshots in the store.
-	// It should return then in descending order, with the highest index first.
+	// List 是用来列出商店中的可用快照。它应该按降序返回，以最高的索引为先。
 	List() ([]*SnapshotMeta, error)
 
 	// Open takes a snapshot ID and provides a ReadCloser. Once close is
@@ -73,13 +72,13 @@ func (r *Raft) runSnapshots() {
 			}
 
 			// Trigger a snapshot
-			if _, err := r.takeSnapshot(); err != nil {
+			if _, err := r.TakeSnapshot(); err != nil {
 				r.logger.Error("failed to take snapshot", "error", err)
 			}
 
 		case future := <-r.userSnapshotCh:
 			// User-triggered, run immediately
-			id, err := r.takeSnapshot()
+			id, err := r.TakeSnapshot()
 			if err != nil {
 				r.logger.Error("failed to take snapshot", "error", err)
 			} else {
@@ -113,42 +112,39 @@ func (r *Raft) shouldSnapshot() bool {
 	return delta >= r.config().SnapshotThreshold
 }
 
-// takeSnapshot is used to take a new snapshot. This must only be called from
-// the snapshot thread, never the main thread. This returns the ID of the new
-// snapshot, along with an error.
-func (r *Raft) takeSnapshot() (string, error) {
+// TakeSnapshot 被用来生成一个新的快照。这必须只在快照线程中调用，而不是在主线程中。它返回新快照的ID，以及一个错误。
+func (r *Raft) TakeSnapshot() (string, error) {
 
-	// Create a request for the FSM to perform a snapshot.
+	// 为FSM创建一个执行快照的请求。
 	snapReq := &reqSnapshotFuture{}
 	snapReq.init()
 
-	// Wait for dispatch or shutdown.
+	// 等待调度或关闭。
 	select {
-	case r.fsmSnapshotCh <- snapReq:
-	case <-r.shutdownCh:
+	case r.fsmSnapshotCh <- snapReq: // 容量为0,因此会阻塞
+	case <-r.shutdownCh: // raft 停止
 		return "", ErrRaftShutdown
 	}
 
-	// Wait until we get a response
+	// 等待，直到我们得到回应
 	if err := snapReq.Error(); err != nil {
 		if err != ErrNothingNewToSnapshot {
-			err = fmt.Errorf("failed to start snapshot: %v", err)
+			err = fmt.Errorf("打快照失败: %v", err)
 		}
 		return "", err
 	}
 	defer snapReq.snapshot.Release()
 
-	// Make a request for the configurations and extract the committed info.
-	// We have to use the future here to safely get this information since
-	// it is owned by the main thread.
+	// 对配置提出请求，并提取承诺的信息。我们必须在这里使用future来安全地获得这些信息，因为它是由主线程拥有的。
 	configReq := &configurationsFuture{}
 	configReq.ShutdownCh = r.shutdownCh
 	configReq.init()
 	select {
-	case r.configurationsCh <- configReq:
-	case <-r.shutdownCh:
+	case r.configurationsCh <- configReq: // 获取配置，
+	case <-r.shutdownCh: // raft 停止
 		return "", ErrRaftShutdown
 	}
+	// 等待 xx 执行完，往errCh扔nil
 	if err := configReq.Error(); err != nil {
 		return "", err
 	}
