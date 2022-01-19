@@ -27,9 +27,10 @@ const (
 	//而是只在FSM管理器捕获它时返回。否则就有可能存在已提交但尚未应用到FSM的操作。
 	LogBarrier
 
-	// LogConfiguration establishes a membership change configuration. It is
-	// created when a server is added, removed, promoted, etc. Only used
-	// when protocol version 1 or greater is in use.
+	// LogConfiguration
+	// 建立一个成员变更配置。它是在一个服务器被添加、移除、晋升等情况下创建的。
+	// 只在使用协议1或更高版本时使用。当协议版本1或更高版本正在使用时。
+
 	LogConfiguration
 )
 
@@ -97,25 +98,25 @@ type Log struct {
 	AppendedAt time.Time
 }
 
-// LogStore is used to provide an interface for storing
-// and retrieving logs in a durable fashion.
+// LogStore
+// 以持久化的方式存储并检索日志 接口
 type LogStore interface {
-	// FirstIndex returns the first index written. 0 for no entries.
+	// FirstIndex 返回第一个写入的索引。0表示没有条目。
 	FirstIndex() (uint64, error)
 
-	// LastIndex returns the last index written. 0 for no entries.
+	// LastIndex 返回最新写入的索引。0表示没有条目。
 	LastIndex() (uint64, error)
 
-	// GetLog gets a log entry at a given index.
+	// GetLog 获得一个给定索引的日志条目。
 	GetLog(index uint64, log *Log) error
 
-	// StoreLog stores a log entry.
+	// StoreLog 存储日志条目
 	StoreLog(log *Log) error
 
-	// StoreLogs stores multiple log entries.
+	// StoreLogs 存储多个日志条目
 	StoreLogs(logs []*Log) error
 
-	// DeleteRange deletes a range of log entries. The range is inclusive.
+	// DeleteRange 删除一个范围的日志条目。该范围是包括在内的。
 	DeleteRange(min, max uint64) error
 }
 
@@ -150,12 +151,12 @@ func oldestLog(s LogStore) (Log, error) {
 	}
 	return l, nil
 }
-
+// 发送日志存储指标
 func emitLogStoreMetrics(s LogStore, prefix []string, interval time.Duration, stopCh <-chan struct{}) {
 	for {
 		select {
 		case <-time.After(interval):
-			// In error case emit 0 as the age
+			// 在错误情况下，发出0作为年龄
 			oldestLog(s)
 		case <-stopCh:
 			return
