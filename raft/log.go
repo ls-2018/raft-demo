@@ -34,7 +34,8 @@ const (
 	LogConfiguration
 )
 
-// String returns LogType as a human readable string.
+// String
+// 返回人类可读的日志类型
 func (lt LogType) String() string {
 	switch lt {
 	case LogCommand:

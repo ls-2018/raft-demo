@@ -2,30 +2,39 @@ package myraft
 
 import (
 	"fmt"
-	"raft-demo/raft"
-
+	"log"
 	"net"
 	"os"
 	"path/filepath"
+	fsm "raft-demo/fsm"
+	"raft-demo/raft"
+	raftboltdb "raft-demo/raft-boltdb"
 	"strings"
 	"time"
-
-	fsm "raft-demo/fsm"
-
-	raftboltdb "raft-demo/raft-boltdb"
 )
 
 func NewMyRaft(raftAddr, raftId, raftDir string) (*raft.Raft, *fsm.Fsm, error) {
 	config := raft.DefaultConfig()
-	config.LocalID = raft.ServerID(raftId)
-
-	addr, _ := net.ResolveTCPAddr("tcp", raftAddr)
+	config.LocalID = raft.ServerID(raftId)           // 类型转换
+	addr, err := net.ResolveTCPAddr("tcp", raftAddr) // string -> TCPAddr{}
+	if err != nil {
+		log.Fatalln(err)
+	}
 	// 传输端点
-	transport, _ := raft.NewTCPTransport(raftAddr, addr, 2, 5*time.Second, os.Stderr)
+	transport, err := raft.NewTCPTransport(raftAddr, addr, 2, 5*time.Second, os.Stderr)
+	if err != nil {
+		log.Fatalln(err)
+	}
 	// 日志存储
-	logStore, _ := raftboltdb.NewBoltStore(filepath.Join(raftDir, "raft-log.db"))
+	logStore, err := raftboltdb.NewBoltStore(filepath.Join(raftDir, "raft-log.db"))
+	if err != nil {
+		log.Fatalln(err)
+	}
 	// 表存储
-	stableStore, _ := raftboltdb.NewBoltStore(filepath.Join(raftDir, "raft-stable.db"))
+	stableStore, err := raftboltdb.NewBoltStore(filepath.Join(raftDir, "raft-stable.db"))
+	if err != nil {
+		log.Fatalln(err)
+	}
 	// 利用复制的日志
 	fm := fsm.NewFsm()
 	// 快照存储

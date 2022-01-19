@@ -41,9 +41,8 @@ var (
 	// entry because it's been superseded by a user snapshot restore.
 	ErrAbortedByRestore = errors.New("snapshot restored while committing log")
 
-	// ErrRaftShutdown is returned when operations are requested against an
-	// inactive Raft.
-	ErrRaftShutdown = errors.New("raft is already shutdown")
+	// ErrRaftShutdown 当请求对一个不活动的raft进行操作时，将返回。
+	ErrRaftShutdown = errors.New("raft已经关闭了")
 
 	// ErrEnqueueTimeout is returned when a command fails due to a timeout.
 	ErrEnqueueTimeout = errors.New("timed out enqueuing operation")
@@ -74,8 +73,7 @@ type Raft struct {
 	// details.
 	protocolVersion ProtocolVersion
 
-	// applyCh is used to async send logs to the main thread to
-	// be committed and applied to the FSM.
+	// applyCh 是用来异步发送日志到主线程，以便被提交并应用到FSM中。
 	applyCh chan *logFuture
 
 	// conf stores the current configuration to use. This is the most recent one
@@ -448,12 +446,10 @@ func HasExistingState(logs LogStore, stable StableStore, snaps SnapshotStore) (b
 	return false, nil
 }
 
-// NewRaft is used to construct a new Raft node. It takes a configuration, as well
-// as implementations of various interfaces that are required. If we have any
-// old state, such as snapshots, logs, peers, etc, all those will be restored
-// when creating the Raft node.
+// NewRaft 用于构建一个新的Raft节点。它需要一个配置，以及所需的各种接口的实现。
+// 如果我们有任何旧的状态，如快照、日志、对等体等，所有这些将在创建Raft节点时被恢复。
 func NewRaft(conf *Config, fsm FSM, logs LogStore, stable StableStore, snaps SnapshotStore, trans Transport) (*Raft, error) {
-	// Validate the configuration.
+	// 验证配置
 	if err := ValidateConfig(conf); err != nil {
 		return nil, err
 	}
@@ -746,9 +742,9 @@ func (r *Raft) ApplyLog(log Log, timeout time.Duration) ApplyFuture {
 	logFuture.init()
 
 	select {
-	case <-timer:
+	case <-timer: // 发送超时
 		return errorFuture{ErrEnqueueTimeout}
-	case <-r.shutdownCh:
+	case <-r.shutdownCh:// raft关闭
 		return errorFuture{ErrRaftShutdown}
 	case r.applyCh <- logFuture:
 		return logFuture

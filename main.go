@@ -26,18 +26,19 @@ var (
 )
 
 func init() {
-	flag.StringVar(&httpAddr, "http_addr", "127.0.0.1:7001", "http listen addr")
-	flag.StringVar(&raftAddr, "raft_addr", "127.0.0.1:7000", "raft listen addr")
+	flag.StringVar(&httpAddr, "http_addr", "127.0.0.1:10001", "http listen addr")
+	//flag.StringVar(&raftAddr, "raft_addr", "127.0.0.1:10000", "raft listen addr")
+	flag.StringVar(&raftAddr, "raft_addr", "0.0.0.0:10000", "raft listen addr")
 	flag.StringVar(&raftId, "raft_id", "1", "raft id")
-	flag.StringVar(&raftCluster, "raft_cluster", "1/127.0.0.1:7000,2/127.0.0.1:8000,3/127.0.0.1:9000", "cluster info")
+	flag.StringVar(&raftCluster, "raft_cluster", "1/127.0.0.1:10000,2/127.0.0.1:20000,3/127.0.0.1:30000", "cluster info")
 }
 
 // go build -mod vendor
-// ./raft-demo --http_addr=127.0.0.1:7001 --raft_addr=127.0.0.1:7000 --raft_id=1 --raft_cluster=1/127.0.0.1:7000,2/127.0.0.1:8000,3/127.0.0.1:9000
-// ./raft-demo --http_addr=127.0.0.1:8001 --raft_addr=127.0.0.1:8000 --raft_id=2 --raft_cluster=1/127.0.0.1:7000,2/127.0.0.1:8000,3/127.0.0.1:9000
-// ./raft-demo --http_addr=127.0.0.1:9001 --raft_addr=127.0.0.1:9000 --raft_id=3 --raft_cluster=1/127.0.0.1:7000,2/127.0.0.1:8000,3/127.0.0.1:9000
-// curl http://127.0.0.1:7001/set?key=test_key&value=test_value
-// curl http://127.0.0.1:7001/get?key=test_key
+// ./raft-demo --http_addr=127.0.0.1:10001 --raft_addr=127.0.0.1:10000 --raft_id=1 --raft_cluster=1/127.0.0.1:10000,2/127.0.0.1:20000,3/127.0.0.1:30000
+// ./raft-demo --http_addr=127.0.0.1:20001 --raft_addr=127.0.0.1:20000 --raft_id=2 --raft_cluster=1/127.0.0.1:10000,2/127.0.0.1:20000,3/127.0.0.1:30000
+// ./raft-demo --http_addr=127.0.0.1:30001 --raft_addr=127.0.0.1:30000 --raft_id=3 --raft_cluster=1/127.0.0.1:10000,2/127.0.0.1:20000,3/127.0.0.1:30000
+// curl http://127.0.0.1:10001/set?key=test_key&value=test_value
+// curl http://127.0.0.1:10001/get?key=test_key
 
 func main() {
 	flag.Parse()

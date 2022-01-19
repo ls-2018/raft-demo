@@ -23,11 +23,9 @@ func (r *RPC) Respond(resp interface{}, err error) {
 	r.RespChan <- RPCResponse{resp, err}
 }
 
-// Transport provides an interface for network transports
-// to allow Raft to communicate with other nodes.
+// Transport 提供了一个网络传输的接口 以使Raft能够与其他节点进行通信。
 type Transport interface {
-	// Consumer returns a channel that can be used to
-	// consume and respond to RPC requests.
+	// Consumer 返回一个可用于消费和响应RPC请求的通道。
 	Consumer() <-chan RPC
 
 	// LocalAddr is used to return our local address to distinguish from our peers.

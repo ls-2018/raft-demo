@@ -8,42 +8,27 @@ import (
 	"github.com/hashicorp/go-hclog"
 )
 
-// ProtocolVersion is the version of the protocol (which includes RPC messages
-// as well as Raft-specific log entries) that this server can _understand_. Use
-// the ProtocolVersion member of the Config object to control the version of
-// the protocol to use when _speaking_ to other servers. Note that depending on
-// the protocol version being spoken, some otherwise understood RPC messages
-// may be refused. See dispositionRPC for details of this logic.
+// ProtocolVersion
+// 是该服务器能够_理解的协议版本（包括RPC消息以及Raft特定的日志条目）。
+// 使用配置对象的ProtocolVersion成员来控制与其他服务器对话时要使用的协议版本。
+// 请注意，根据所使用的协议版本，一些本来可以理解的RPC消息 可能会被拒绝。
+// 关于这个逻辑的细节，请参见dispositionRPC。
 //
-// There are notes about the upgrade path in the description of the versions
-// below. If you are starting a fresh cluster then there's no reason not to
-// jump right to the latest protocol version. If you need to interoperate with
-// older, version 0 Raft servers you'll need to drive the cluster through the
-// different versions in order.
+// 在下面的版本描述中，有关于升级方式的说明。如果你正在启动一个新的集群，
+// 那么没有理由不直接跳到最新的协议版本。如果你需要与旧的、0版本的Raft服务器进行互操作，你将需要通过不同的版本依次驱动集群。
 //
-// The version details are complicated, but here's a summary of what's required
-// to get from a version 0 cluster to version 3:
+// 版本的细节很复杂，但这里总结了从0版本的集群到3版本所需的内容。
+// 1. 在你的应用程序的N个版本中，开始使用新的Raft库，并采用版本管理，将ProtocolVersion设置为1。
+// 2. 使你的应用程序的N+1版本需要N版本作为先决条件（所有服务器必须升级）。对于你的应用程序的N+1版本，将ProtocolVersion设置为2。
+// 3. 同样，使你的应用程序的N+2版本需要N+1版本作为先决条件。对于你的应用程序的N+2版本，将ProtocolVersion设置为3。
 //
-// 1. In version N of your app that starts using the new Raft library with
-//    versioning, set ProtocolVersion to 1.
-// 2. Make version N+1 of your app require version N as a prerequisite (all
-//    servers must be upgraded). For version N+1 of your app set ProtocolVersion
-//    to 2.
-// 3. Similarly, make version N+2 of your app require version N+1 as a
-//    prerequisite. For version N+2 of your app, set ProtocolVersion to 3.
+// 在这个升级过程中，老的集群成员仍然会有等于其网络地址的服务器ID。要升级一个老成员并给它一个ID，它需要离开集群并重新进入。
 //
-// During this upgrade, older cluster members will still have Server IDs equal
-// to their network addresses. To upgrade an older member and give it an ID, it
-// needs to leave the cluster and re-enter:
+// 1. 使用RemoveServer将服务器从集群中移除，使用其网络地址作为其ServerID。
+// 2. 更新服务器的配置，使用UUID或其他不与机器绑定的东西作为ServerID（重启服务器）。
+// 3. 用AddVoter将服务器添加回集群，使用它的新ID。
 //
-// 1. Remove the server from the cluster with RemoveServer, using its network
-//    address as its ServerID.
-// 2. Update the server's config to use a UUID or something else that is
-//	  not tied to the machine as the ServerID (restarting the server).
-// 3. Add the server back to the cluster with AddVoter, using its new ID.
-//
-// You can do this during the rolling upgrade from N+1 to N+2 of your app, or
-// as a rolling change at any time after the upgrade.
+// 你可以在你的应用程序从N+1到N+2的滚动升级过程中这样做，也可以在升级后的任何时候作为一个滚动变化。
 //
 // Version History
 //
@@ -88,9 +73,9 @@ import (
 type ProtocolVersion int
 
 const (
-	// ProtocolVersionMin is the minimum protocol version
+	// ProtocolVersionMin 最小的协议版本
 	ProtocolVersionMin ProtocolVersion = 0
-	// ProtocolVersionMax is the maximum protocol version
+	// ProtocolVersionMax 最大的协议版本
 	ProtocolVersionMax = 3
 )
 
@@ -120,29 +105,23 @@ const (
 	SnapshotVersionMax = 1
 )
 
-// Config provides any necessary configuration for the Raft server.
+// Config 为Raft服务器提供任何必要的配置。
 type Config struct {
-	// ProtocolVersion allows a Raft server to inter-operate with older
-	// Raft servers running an older version of the code. This is used to
-	// version the wire protocol as well as Raft-specific log entries that
-	// the server uses when _speaking_ to other servers. There is currently
-	// no auto-negotiation of versions so all servers must be manually
-	// configured with compatible versions. See ProtocolVersionMin and
-	// ProtocolVersionMax for the versions of the protocol that this server
-	// can _understand_.
+	// ProtocolVersion 允许Raft服务器与运行旧版本代码的Raft服务器进行互操作。
+	// 这被用来对电报协议以及服务器在与其他服务器对话时使用的Raft特定的日志条目进行版本管理。
+	// 目前没有自动协商的版本，所以所有服务器必须手动配置兼容的版本。
+	// 参见ProtocolVersionMin和 ProtocolVersionMax，了解该服务器可以理解的协议版本。
 	ProtocolVersion ProtocolVersion
 
-	// HeartbeatTimeout specifies the time in follower state without
-	// a leader before we attempt an election.
+	// HeartbeatTimeout 指定在没有领导者的情况下处于跟随者状态的时间
+	// 在我们试图进行选举之前，处于没有领导者的追随者状态的时间。
+	// flower <> candidate <> leader
 	HeartbeatTimeout time.Duration
 
-	// ElectionTimeout specifies the time in candidate state without
-	// a leader before we attempt an election.
+	// ElectionTimeout 规定了在我们试图进行选举之后，没有领导者的候选时间。
 	ElectionTimeout time.Duration
 
-	// CommitTimeout controls the time without an Apply() operation
-	// before we heartbeat to ensure a timely commit. Due to random
-	// staggering, may be delayed as much as 2x this value.
+	// CommitTimeout 控制在我们心跳之前没有Apply()操作的时间，以确保及时提交。由于随机交错，可能会延迟到这个值的2倍之多。
 	CommitTimeout time.Duration
 
 	// MaxAppendEntries controls the maximum number of append entries
@@ -170,11 +149,9 @@ type Config struct {
 	// This can be tuned during operation using ReloadConfig.
 	TrailingLogs uint64
 
-	// SnapshotInterval controls how often we check if we should perform a
-	// snapshot. We randomly stagger between this value and 2x this value to avoid
-	// the entire cluster from performing a snapshot at once. The value passed
-	// here is the initial setting used. This can be tuned during operation using
-	// ReloadConfig.
+	// SnapshotInterval
+	// 控制我们多长时间检查一次是否应该执行快照。我们在这个值和2倍这个值之间随机错开，以避免整个集群一次执行快照。
+	// 这里传递的值是使用的初始设置。在操作过程中，可以用 ReloadConfig。
 	SnapshotInterval time.Duration
 
 	// SnapshotThreshold controls how many outstanding logs there must be before
@@ -189,9 +166,7 @@ type Config struct {
 	// step down as leader.
 	LeaderLeaseTimeout time.Duration
 
-	// LocalID is a unique ID for this server across all time. When running with
-	// ProtocolVersion < 3, you must set this to be the same as the network
-	// address of your transport.
+	// LocalID 是该服务器在所有时间内的唯一ID。当使用ProtocolVersion < 3运行时，你必须将其设置为与传输的网络地址相同。
 	LocalID ServerID
 
 	// NotifyCh is used to provide a channel that will be notified of leadership
@@ -199,16 +174,13 @@ type Config struct {
 	// buffered or aggressively consumed.
 	NotifyCh chan<- bool
 
-	// LogOutput is used as a sink for logs, unless Logger is specified.
-	// Defaults to os.Stderr.
+	// LogOutput 默认 os.Stderr.
 	LogOutput io.Writer
 
-	// LogLevel represents a log level. If the value does not match a known
-	// logging level hclog.NoLevel is used.
+	// LogLevel 日志登记  hclog.NoLevel
 	LogLevel string
 
-	// Logger is a user-provided logger. If nil, a logger writing to
-	// LogOutput with LogLevel is used.
+	// Logger
 	Logger hclog.Logger
 
 	// NoSnapshotRestoreOnStart controls if raft will restore a snapshot to the
@@ -217,110 +189,105 @@ type Config struct {
 	// raft's configuration and index values.
 	NoSnapshotRestoreOnStart bool
 
-	// skipStartup allows NewRaft() to bypass all background work goroutines
+	// skipStartup 允许NewRaft()绕过所有的后台工作程序。
 	skipStartup bool
 }
 
-// ReloadableConfig is the subset of Config that may be reconfigured during
-// runtime using raft.ReloadConfig. We choose to duplicate fields over embedding
-// or accepting a Config but only using specific fields to keep the API clear.
-// Reconfiguring some fields is potentially dangerous so we should only
-// selectively enable it for fields where that is allowed.
+// ReloadableConfig
+// 是Config的子集，可以在运行时使用raft.ReloadConfig进行重新配置。
+// 我们选择重复字段，而不是嵌入或接受一个Config，但只使用特定的字段来保持API的清晰。
+// 重新配置一些字段有潜在的危险，所以我们应该只在允许的字段中选择性地启用它。
 type ReloadableConfig struct {
-	// TrailingLogs controls how many logs we leave after a snapshot. This is used
-	// so that we can quickly replay logs on a follower instead of being forced to
-	// send an entire snapshot. The value passed here updates the setting at runtime
-	// which will take effect as soon as the next snapshot completes and truncation
-	// occurs.
+	// TrailingLogs 控制我们在快照后留下多少日志。这是为了让我们能够快速地在跟flower上重放日志，而不是被迫发送整个快照。
+	// 这里传递的值会在运行时更新设置，一旦下一个快照完成并发生截断，就会生效。
 	TrailingLogs uint64
 
-	// SnapshotInterval controls how often we check if we should perform a snapshot.
-	// We randomly stagger between this value and 2x this value to avoid the entire
-	// cluster from performing a snapshot at once.
+	// 控制我们多长时间检查一次是否应该执行快照。我们在这个值和2倍这个值之间随机错开，以避免整个集群一次执行快照。
 	SnapshotInterval time.Duration
 
-	// SnapshotThreshold controls how many outstanding logs there must be before
-	// we perform a snapshot. This is to prevent excessive snapshots when we can
-	// just replay a small set of logs.
+	// SnapshotThreshold 控制在我们执行快照之前必须有多少未完成的日志。这是为了防止在我们只需重放一小部分日志的情况下出现过多的快照。
 	SnapshotThreshold uint64
 }
 
-// apply sets the reloadable fields on the passed Config to the values in
-// `ReloadableConfig`. It returns a copy of Config with the fields from this
-// ReloadableConfig set.
-func (rc *ReloadableConfig) apply(to Config) Config {
-	to.TrailingLogs = rc.TrailingLogs
-	to.SnapshotInterval = rc.SnapshotInterval
-	to.SnapshotThreshold = rc.SnapshotThreshold
-	return to
+// apply 将传递的Config上的可重载字段设置为`ReloadableConfig`中的值。它返回一个Config的副本，其中包含ReloadableConfig的字段。
+func (rc *ReloadableConfig) apply(old Config) Config {
+	old.TrailingLogs = rc.TrailingLogs
+	old.SnapshotInterval = rc.SnapshotInterval
+	old.SnapshotThreshold = rc.SnapshotThreshold
+	return old
 }
 
-// fromConfig copies the reloadable fields from the passed Config.
+// fromConfig 从传递的配置中复制可重载的字段。
 func (rc *ReloadableConfig) fromConfig(from Config) {
 	rc.TrailingLogs = from.TrailingLogs
 	rc.SnapshotInterval = from.SnapshotInterval
 	rc.SnapshotThreshold = from.SnapshotThreshold
 }
 
-// DefaultConfig returns a Config with usable defaults.
+// DefaultConfig 返回一个带有可用默认值的配置。
 func DefaultConfig() *Config {
 	return &Config{
-		ProtocolVersion:    ProtocolVersionMax,
-		HeartbeatTimeout:   1000 * time.Millisecond,
-		ElectionTimeout:    1000 * time.Millisecond,
-		CommitTimeout:      50 * time.Millisecond,
+		ProtocolVersion:    ProtocolVersionMax,      // 3
+		HeartbeatTimeout:   1000 * time.Millisecond, // 1s
+		ElectionTimeout:    1000 * time.Millisecond, // 1s
+		CommitTimeout:      50 * time.Millisecond,   // 50ms
 		MaxAppendEntries:   64,
 		ShutdownOnRemove:   true,
 		TrailingLogs:       10240,
 		SnapshotInterval:   120 * time.Second,
 		SnapshotThreshold:  8192,
-		LeaderLeaseTimeout: 500 * time.Millisecond,
+		LeaderLeaseTimeout: 500 * time.Millisecond, //50ms  租约超时
 		LogLevel:           "DEBUG",
 	}
 }
 
-// ValidateConfig is used to validate a sane configuration
+// ValidateConfig 是用来验证一个合理的配置
 func ValidateConfig(config *Config) error {
-	// We don't actually support running as 0 in the library any more, but
-	// we do understand it.
+	// 我们实际上不再支持在库中以协议版本0的形式运行，但我们确实理解它。
 	protocolMin := ProtocolVersionMin
 	if protocolMin == 0 {
 		protocolMin = 1
 	}
-	if config.ProtocolVersion < protocolMin ||
-		config.ProtocolVersion > ProtocolVersionMax {
-		return fmt.Errorf("ProtocolVersion %d must be >= %d and <= %d",
+	if config.ProtocolVersion < protocolMin || config.ProtocolVersion > ProtocolVersionMax {
+		return fmt.Errorf("协议版本 %d must be >= %d and <= %d",
 			config.ProtocolVersion, protocolMin, ProtocolVersionMax)
 	}
 	if len(config.LocalID) == 0 {
 		return fmt.Errorf("LocalID cannot be empty")
 	}
+	// flower 进入候选的时间间隔
 	if config.HeartbeatTimeout < 5*time.Millisecond {
-		return fmt.Errorf("HeartbeatTimeout is too low")
+		return fmt.Errorf("flower 进入候选的时间间隔 is too low")
 	}
+	// 候选超时
 	if config.ElectionTimeout < 5*time.Millisecond {
-		return fmt.Errorf("ElectionTimeout is too low")
+		return fmt.Errorf("候选超时 is too low")
 	}
+	// 日志提交超时
 	if config.CommitTimeout < time.Millisecond {
-		return fmt.Errorf("CommitTimeout is too low")
+		return fmt.Errorf("日志提交超时 is too low")
 	}
+	// 最大的日志条目数
 	if config.MaxAppendEntries <= 0 {
-		return fmt.Errorf("MaxAppendEntries must be positive")
+		return fmt.Errorf("最大的日志条目数必须>0")
 	}
 	if config.MaxAppendEntries > 1024 {
-		return fmt.Errorf("MaxAppendEntries is too large")
+		return fmt.Errorf("最大的日志条目数必须 <1024")
 	}
+	// 快照检查间隔
 	if config.SnapshotInterval < 5*time.Millisecond {
-		return fmt.Errorf("SnapshotInterval is too low")
+		return fmt.Errorf("快照检查间隔 is too low")
 	}
+	// leader 发送心跳的超时时间
 	if config.LeaderLeaseTimeout < 5*time.Millisecond {
 		return fmt.Errorf("LeaderLeaseTimeout is too low")
 	}
 	if config.LeaderLeaseTimeout > config.HeartbeatTimeout {
-		return fmt.Errorf("LeaderLeaseTimeout cannot be larger than heartbeat timeout")
+		return fmt.Errorf("LeaderLeaseTimeout不能大于心跳超时。")
 	}
+	// 选举超时
 	if config.ElectionTimeout < config.HeartbeatTimeout {
-		return fmt.Errorf("ElectionTimeout must be equal or greater than Heartbeat Timeout")
+		return fmt.Errorf("ElectionTimeout必须等于或大于Heartbeat Timeout")
 	}
 	return nil
 }

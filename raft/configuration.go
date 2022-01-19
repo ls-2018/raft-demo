@@ -52,10 +52,10 @@ type nopConfigurationStore struct{}
 
 func (s nopConfigurationStore) StoreConfiguration(_ uint64, _ Configuration) {}
 
-// ServerID is a unique string identifying a server for all time.
+// ServerID 是一个唯一的字符串，用于识别服务器。
 type ServerID string
 
-// ServerAddress is a network address for a server that a transport can contact.
+// ServerAddress 一个可以通信的服务端点
 type ServerAddress string
 
 // Server tracks the information about a single server in a configuration.
