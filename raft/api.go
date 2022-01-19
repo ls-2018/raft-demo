@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	_var "raft-demo/raft-boltdb/var"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -64,29 +65,23 @@ var (
 	ErrLeadershipTransferInProgress = errors.New("leadership transfer in progress")
 )
 
-// Raft implements a Raft node.
+// Raft raft 节点
 type Raft struct {
 	raftState
 
-	// protocolVersion is used to inter-operate with Raft servers running
-	// different versions of the library. See comments in config.go for more
-	// details.
+	// protocolVersion raft节点之间通信的协议版本
 	protocolVersion ProtocolVersion
 
 	// applyCh 是用来异步发送日志到主线程，以便被提交并应用到FSM中。
 	applyCh chan *logFuture
 
-	// conf stores the current configuration to use. This is the most recent one
-	// provided. All reads of config values should use the config() helper method
-	// to read this safely.
+	// conf 存储当前要使用的配置。这是所提供的最新的配置。所有对配置值的读取都应该使用config()辅助方法来安全读取。
 	conf atomic.Value
 
-	// confReloadMu ensures that only one thread can reload config at once since
-	// we need to read-modify-write the atomic. It is NOT necessary to hold this
-	// for any other operation e.g. reading config using config().
+	// confReloadMu 确保同时只有一个工作线程可以重新加载congfig
 	confReloadMu sync.Mutex
 
-	// FSM is the client state machine to apply commands to
+	// FSM 客户端状态机应该实现的接口
 	fsm FSM
 
 	// fsmMutateCh is used to send state-changing updates to the FSM. This
@@ -122,16 +117,15 @@ type Raft struct {
 	// on.
 	candidateFromLeadershipTransfer bool
 
-	// Stores our local server ID, used to avoid sending RPCs to ourself
+	// 服务器的逻辑ID 存储我们的本地服务器ID，用于避免向我们自己发送RPC。
 	localID ServerID
 
-	// Stores our local addr
+	// 本机地址  ip:port
 	localAddr ServerAddress
 
-	// Used for our logging
 	logger hclog.Logger
 
-	// LogStore provides durable storage for logs
+	// LogStore 日志存储空间
 	logs LogStore
 
 	// Used to request the leader to make configuration changes.
@@ -472,42 +466,38 @@ func NewRaft(conf *Config, fsm FSM, logs LogStore, stable StableStore, snaps Sna
 
 	// 尝试重置当前任期
 	currentTerm, err := stable.GetUint64(keyCurrentTerm)
-	if err != nil && err.Error() != "not found" {
-		return nil, fmt.Errorf("failed to load current term: %v", err)
+	if err != nil && err != _var.ErrKeyNotFound {
+		return nil, fmt.Errorf("获取当前任期失败: %v", err)
 	}
 
-	// Read the index of the last log entry.
+	// 读取最后一条日志记录的索引。
 	lastIndex, err := logs.LastIndex()
 	if err != nil {
-		return nil, fmt.Errorf("failed to find last log: %v", err)
+		return nil, fmt.Errorf("读取最后一条日志记录的索引。: %v", err)
 	}
 
-	// Get the last log entry.
+	// 获取最新的日志条目
 	var lastLog Log
 	if lastIndex > 0 {
 		if err = logs.GetLog(lastIndex, &lastLog); err != nil {
-			return nil, fmt.Errorf("failed to get last log at index %d: %v", lastIndex, err)
+			return nil, fmt.Errorf("获取最新的日志条目失败 at index %d: %v", lastIndex, err)
 		}
 	}
-
-	// Make sure we have a valid server address and ID.
+	// 确保我们有一个有效的服务器地址和ID。
 	protocolVersion := conf.ProtocolVersion
-	localAddr := trans.LocalAddr()
-	localID := conf.LocalID
+	localAddr := trans.LocalAddr() // 127.0.0.1:10000
+	localID := conf.LocalID        // 逻辑的服务器ID  main.go:30
 
-	// TODO (slackpad) - When we deprecate protocol version 2, remove this
-	// along with the AddPeer() and RemovePeer() APIs.
 	if protocolVersion < 3 && string(localID) != string(localAddr) {
-		return nil, fmt.Errorf("when running with ProtocolVersion < 3, LocalID must be set to the network address")
+		return nil, fmt.Errorf("当协议版本<3，逻辑ID应与实际的ip:port相等")
 	}
 
-	// Buffer applyCh to MaxAppendEntries if the option is enabled
+	// 如果选项被启用，缓冲区适用于MaxAppendEntries。
 	applyCh := make(chan *logFuture)
-	if conf.BatchApplyCh {
+	if conf.BatchApplyCh { // 默认为False
 		applyCh = make(chan *logFuture, conf.MaxAppendEntries)
 	}
 
-	// Create Raft struct.
 	r := &Raft{
 		protocolVersion:       protocolVersion,
 		applyCh:               applyCh,

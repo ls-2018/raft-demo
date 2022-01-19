@@ -11,13 +11,11 @@ type FSM interface {
 	// Apply
 	//如果Raft.Apply方法在与FSM相同的Raft节点上被调用，则该方法将在ApplyFuture中使用。
 	Apply(*Log) interface{}
-
 	// Snapshot
 	//是用来支持日志压缩的。这个调用应该返回一个FSMSnapshot，可以用来保存FSM的时间点快照。
 	//Apply和Snapshot不应在多线程中调用，但Apply将通过Persist并发调用。
 	//这意味着FSM的实现方式应该是允许在快照发生时进行并发更新。
 	Snapshot() (FSMSnapshot, error)
-
 	// Restore 是用来从快照中恢复FSM的。它不能与任何其他命令同时调用。FSM必须丢弃所有以前的 状态。
 	Restore(io.ReadCloser) error
 }

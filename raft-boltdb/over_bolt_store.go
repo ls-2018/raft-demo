@@ -1,9 +1,9 @@
 package raftboltdb
 
 import (
-	"errors"
 	"github.com/boltdb/bolt"
 	"raft-demo/raft"
+	. "raft-demo/raft-boltdb/var"
 )
 
 const (
@@ -11,14 +11,6 @@ const (
 	dbFileMode = 0600
 )
 
-var (
-	// 我们执行事务的的Bucket名称
-	dbLogs = []byte("logs")
-	dbConf = []byte("conf")
-
-	// ErrKeyNotFound 一个错误表明一个给定的键不存在
-	ErrKeyNotFound = errors.New("not found")
-)
 var _ raft.LogStore = &BoltStore{}
 var _ raft.StableStore = &BoltStore{}
 
@@ -88,11 +80,11 @@ func (b *BoltStore) initialize() error {
 	defer tx.Rollback()
 
 	// logs
-	if _, err := tx.CreateBucketIfNotExists(dbLogs); err != nil {
+	if _, err := tx.CreateBucketIfNotExists(DbLogs); err != nil {
 		return err
 	}
 	// conf
-	if _, err := tx.CreateBucketIfNotExists(dbConf); err != nil {
+	if _, err := tx.CreateBucketIfNotExists(DbConf); err != nil {
 		return err
 	}
 
@@ -113,7 +105,7 @@ func (b *BoltStore) FirstIndex() (uint64, error) {
 	}
 	defer tx.Rollback()
 
-	curs := tx.Bucket(dbLogs).Cursor()
+	curs := tx.Bucket(DbLogs).Cursor()
 	if first, _ := curs.First(); first == nil {
 		return 0, nil
 	} else {
@@ -130,7 +122,7 @@ func (b *BoltStore) LastIndex() (uint64, error) {
 	}
 	defer tx.Rollback()
 
-	curs := tx.Bucket(dbLogs).Cursor()
+	curs := tx.Bucket(DbLogs).Cursor()
 	if last, _ := curs.Last(); last == nil {
 		return 0, nil
 	} else {
@@ -146,7 +138,7 @@ func (b *BoltStore) GetLog(idx uint64, log *raft.Log) error {
 	}
 	defer tx.Rollback()
 
-	bucket := tx.Bucket(dbLogs)
+	bucket := tx.Bucket(DbLogs)
 	val := bucket.Get(uint64ToBytes(idx))
 
 	if val == nil {
@@ -173,7 +165,7 @@ func (b *BoltStore) StoreLogs(logs []*raft.Log) error {
 		if err != nil {
 			return err
 		}
-		bucket := tx.Bucket(dbLogs)
+		bucket := tx.Bucket(DbLogs)
 		if err := bucket.Put(key, val.Bytes()); err != nil {
 			return err
 		}
@@ -192,7 +184,7 @@ func (b *BoltStore) DeleteRange(min, max uint64) error {
 	}
 	defer tx.Rollback()
 
-	curs := tx.Bucket(dbLogs).Cursor()
+	curs := tx.Bucket(DbLogs).Cursor()
 	for k, _ := curs.Seek(minKey); k != nil; k, _ = curs.Next() {
 		// 处理超出范围的日志索引
 		if bytesToUint64(k) > max {
@@ -216,7 +208,7 @@ func (b *BoltStore) Set(k, v []byte) error {
 	}
 	defer tx.Rollback()
 
-	bucket := tx.Bucket(dbConf)
+	bucket := tx.Bucket(DbConf)
 	if err := bucket.Put(k, v); err != nil {
 		return err
 	}
@@ -232,7 +224,7 @@ func (b *BoltStore) Get(k []byte) ([]byte, error) {
 	}
 	defer tx.Rollback()
 
-	bucket := tx.Bucket(dbConf)
+	bucket := tx.Bucket(DbConf)
 	val := bucket.Get(k)
 
 	if val == nil {

@@ -130,11 +130,9 @@ type Config struct {
 	// an inconsistent log.
 	MaxAppendEntries int
 
-	// BatchApplyCh indicates whether we should buffer applyCh
-	// to size MaxAppendEntries. This enables batch log commitment,
-	// but breaks the timeout guarantee on Apply. Specifically,
-	// a log can be added to the applyCh buffer but not actually be
-	// processed until after the specified timeout.
+	// BatchApplyCh 表示我们是否应该将applyCh缓冲到MaxAppendEntries大小。
+	// 这可以实现批量的日志承诺，但会破坏Apply的超时保证。
+	// 具体来说，一个日志可以被添加到applyCh的缓冲区，但实际上直到指定的超时后才会被处理。
 	BatchApplyCh bool
 
 	// If we are a member of a cluster, and RemovePeer is invoked for the

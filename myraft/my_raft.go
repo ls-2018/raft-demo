@@ -41,8 +41,16 @@ func NewMyRaft(raftAddr, raftId, raftDir string) (*raft.Raft, *fsm.Fsm, error) {
 	// 利用复制的日志
 	fm := fsm.NewFsm()
 	// 快照存储
-	snapshots, _ := raft.NewFileSnapshotStore(raftDir, 2, os.Stderr)
-	rf, _ := raft.NewRaft(config, fm, logStore, stableStore, snapshots, transport)
+	var snapshots *raft.FileSnapshotStore
+	snapshots, err = raft.NewFileSnapshotStore(raftDir, 2, os.Stderr)
+	if err != nil {
+		log.Fatal(err)
+	}
+	var rf *raft.Raft
+	rf, err = raft.NewRaft(config, fm, logStore, stableStore, snapshots, transport)
+	if err != nil {
+		log.Fatal(err)
+	}
 	fmt.Println(raft.HasExistingState(logStore, stableStore, snapshots))
 	return rf, fm, nil
 }
