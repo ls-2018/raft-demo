@@ -157,7 +157,6 @@ func (r *Raft) runFollower() {
 			r.processRPC(rpc)
 		//-----------------------------------
 		// 拒绝任何操作，当不是leader
-
 		case c := <-r.configurationChangeCh:
 			c.respond(ErrNotLeader)
 		case a := <-r.applyCh:
