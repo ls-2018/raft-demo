@@ -104,7 +104,7 @@ func (r *Raft) DeregisterObserver(or *Observer) {
 	delete(r.observers, or.id)
 }
 
-// observe 向每个node发送了一个观察结果。
+// observe 向每个node发送了一个观察结果。  只有在测试时，才会走到这里
 func (r *Raft) observe(o interface{}) {
 	// 一般来说，观察员不应该阻止。但在任何情况下，这都不是灾难性的，因为我们只持有一个读锁，这只是防止观察者的注册/取消注册。
 	r.observersLock.RLock()

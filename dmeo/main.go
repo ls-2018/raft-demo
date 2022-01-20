@@ -1,10 +1,12 @@
 package main
 
 import (
+	"bufio"
 	"encoding/binary"
 	"fmt"
 	"github.com/boltdb/bolt"
 	"github.com/hashicorp/go-hclog"
+	"github.com/hashicorp/go-msgpack/codec"
 	"hash/crc64"
 	"os"
 	"time"
@@ -15,7 +17,7 @@ var dbConf = []byte("MyBucket")
 func main() {
 	fmt.Println(crc64.New(crc64.MakeTable(crc64.ECMA)).Sum64())
 	fmt.Println(crc64.New(crc64.MakeTable(crc64.ECMA)).Sum64())
-	a:=[]uint8{
+	a := []uint8{
 		147,
 		145,
 		89,
@@ -25,7 +27,8 @@ func main() {
 		213,
 		93,
 	}
-	fmt.Println(string(a ))
+	fmt.Println(string(a))
+	e()
 }
 func mai2n() {
 	logger := hclog.New(&hclog.LoggerOptions{
@@ -101,4 +104,18 @@ func uint64ToBytes(u uint64) []byte {
 	buf := make([]byte, 8)
 	binary.BigEndian.PutUint64(buf, u)
 	return buf
+}
+
+type Demo struct {
+	A int
+}
+
+func e() {
+	a := Demo{
+		A: 123123,
+	}
+	b := bufio.NewWriter(os.Stdout)
+	encoder := codec.NewEncoder(b, &codec.MsgpackHandle{})
+	encoder.Encode(a)
+	b.Flush()
 }

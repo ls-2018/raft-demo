@@ -38,14 +38,14 @@ type Transport interface {
 	// AppendEntries sends the appropriate RPC to the target node.
 	AppendEntries(id ServerID, target ServerAddress, args *AppendEntriesRequest, resp *AppendEntriesResponse) error
 
-	// RequestVote sends the appropriate RPC to the target node.
+	// RequestVote 发送投票请求到目标节点
 	RequestVote(id ServerID, target ServerAddress, args *RequestVoteRequest, resp *RequestVoteResponse) error
 
 	// InstallSnapshot is used to push a snapshot down to a follower. The data is read from
 	// the ReadCloser and streamed to the client.
 	InstallSnapshot(id ServerID, target ServerAddress, args *InstallSnapshotRequest, resp *InstallSnapshotResponse, data io.Reader) error
 
-	// EncodePeer is used to serialize a peer's address.
+	// EncodePeer 是用来序列化一个节点的地址。
 	EncodePeer(id ServerID, addr ServerAddress) []byte
 
 	// DecodePeer is used to deserialize a peer's address.

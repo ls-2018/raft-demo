@@ -10,6 +10,7 @@ import (
 
 	"github.com/boltdb/bolt"
 	"raft-demo/raft"
+	. "raft-demo/raft-boltdb/var"
 )
 
 func testBoltStore(t testing.TB) *BoltStore {
@@ -161,10 +162,10 @@ func TestNewBoltStore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("err: %s", err)
 	}
-	if _, err := tx.CreateBucket([]byte(dbLogs)); err != bolt.ErrBucketExists {
+	if _, err := tx.CreateBucket([]byte(DbLogs)); err != bolt.ErrBucketExists {
 		t.Fatalf("bad: %v", err)
 	}
-	if _, err := tx.CreateBucket([]byte(dbConf)); err != bolt.ErrBucketExists {
+	if _, err := tx.CreateBucket([]byte(DbConf)); err != bolt.ErrBucketExists {
 		t.Fatalf("bad: %v", err)
 	}
 }

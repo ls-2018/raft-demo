@@ -35,19 +35,19 @@ func inmemConfig(t *testing.T) *Config {
 // MockFSM is an implementation of the FSM interface, and just stores
 // the logs sequentially.
 //
-// NOTE: This is exposed for middleware testing purposes and is not a stable API
+// NOTE: 这是为中间件测试目的而公开的，不是一个稳定的API。
 type MockFSM struct {
 	sync.Mutex
 	logs           [][]byte
 	configurations []Configuration
 }
 
-// NOTE: This is exposed for middleware testing purposes and is not a stable API
+// MockFSMConfigStore NOTE: 这是为中间件测试目的而公开的，不是一个稳定的API。
 type MockFSMConfigStore struct {
 	FSM
 }
 
-// NOTE: This is exposed for middleware testing purposes and is not a stable API
+// WrappingFSM NOTE: 这是为中间件测试目的而公开的，不是一个稳定的API。
 type WrappingFSM interface {
 	Underlying() FSM
 }
@@ -65,7 +65,7 @@ func getMockFSM(fsm FSM) *MockFSM {
 	return nil
 }
 
-// NOTE: This is exposed for middleware testing purposes and is not a stable API
+// MockSnapshot NOTE: 这是为中间件测试目的而公开的，不是一个稳定的API。
 type MockSnapshot struct {
 	logs     [][]byte
 	maxIndex int
@@ -73,7 +73,7 @@ type MockSnapshot struct {
 
 var _ ConfigurationStore = (*MockFSMConfigStore)(nil)
 
-// NOTE: This is exposed for middleware testing purposes and is not a stable API
+// Apply NOTE: 这是为中间件测试目的而公开的，不是一个稳定的API。
 func (m *MockFSM) Apply(log *Log) interface{} {
 	m.Lock()
 	defer m.Unlock()
@@ -81,14 +81,14 @@ func (m *MockFSM) Apply(log *Log) interface{} {
 	return len(m.logs)
 }
 
-// NOTE: This is exposed for middleware testing purposes and is not a stable API
+// Snapshot NOTE: 这是为中间件测试目的而公开的，不是一个稳定的API。
 func (m *MockFSM) Snapshot() (FSMSnapshot, error) {
 	m.Lock()
 	defer m.Unlock()
 	return &MockSnapshot{m.logs, len(m.logs)}, nil
 }
 
-// NOTE: This is exposed for middleware testing purposes and is not a stable API
+// Restore NOTE: 这是为中间件测试目的而公开的，不是一个稳定的API。
 func (m *MockFSM) Restore(inp io.ReadCloser) error {
 	m.Lock()
 	defer m.Unlock()
@@ -100,14 +100,14 @@ func (m *MockFSM) Restore(inp io.ReadCloser) error {
 	return dec.Decode(&m.logs)
 }
 
-// NOTE: This is exposed for middleware testing purposes and is not a stable API
+// Logs NOTE: 这是为中间件测试目的而公开的，不是一个稳定的API。
 func (m *MockFSM) Logs() [][]byte {
 	m.Lock()
 	defer m.Unlock()
 	return m.logs
 }
 
-// NOTE: This is exposed for middleware testing purposes and is not a stable API
+// StoreConfiguration NOTE: 这是为中间件测试目的而公开的，不是一个稳定的API。
 func (m *MockFSMConfigStore) StoreConfiguration(index uint64, config Configuration) {
 	mm := m.FSM.(*MockFSM)
 	mm.Lock()
@@ -115,7 +115,7 @@ func (m *MockFSMConfigStore) StoreConfiguration(index uint64, config Configurati
 	mm.configurations = append(mm.configurations, config)
 }
 
-// NOTE: This is exposed for middleware testing purposes and is not a stable API
+// Persist NOTE: 这是为中间件测试目的而公开的，不是一个稳定的API。
 func (m *MockSnapshot) Persist(sink SnapshotSink) error {
 	hd := codec.MsgpackHandle{}
 	enc := codec.NewEncoder(sink, &hd)
@@ -127,7 +127,7 @@ func (m *MockSnapshot) Persist(sink SnapshotSink) error {
 	return nil
 }
 
-// NOTE: This is exposed for middleware testing purposes and is not a stable API
+// Release NOTE: 这是为中间件测试目的而公开的，不是一个稳定的API。
 func (m *MockSnapshot) Release() {
 }
 
@@ -653,9 +653,9 @@ WAIT:
 	goto CHECK
 }
 
-// NOTE: This is exposed for middleware testing purposes and is not a stable API
+// MakeClusterOpts NOTE: 这是为中间件测试目的而公开的，不是一个稳定的API。
 type MakeClusterOpts struct {
-	Peers           int
+	Peers           int // 有几个选举节点
 	Bootstrap       bool
 	Conf            *Config
 	ConfigStoreFSM  bool
@@ -663,10 +663,10 @@ type MakeClusterOpts struct {
 	LongstopTimeout time.Duration
 }
 
-// makeCluster will return a cluster with the given config and number of peers.
-// If bootstrap is true, the servers will know about each other before starting,
-// otherwise their transports will be wired up but they won't yet have configured
-// each other.
+// makeCluster
+// 通过配置，创建一个给定数量节点的集群
+// 如果bootstrap为真，服务器将在启动前知道彼此的情况，否则它们的端点将被连接起来，但它们还没有配置彼此。
+
 func makeCluster(t *testing.T, opts *MakeClusterOpts) *cluster {
 	if opts.Conf == nil {
 		opts.Conf = inmemConfig(t)
@@ -767,7 +767,7 @@ func makeCluster(t *testing.T, opts *MakeClusterOpts) *cluster {
 	return c
 }
 
-// NOTE: This is exposed for middleware testing purposes and is not a stable API
+// MakeCluster NOTE: 这是为中间件测试目的而公开的，不是一个稳定的API。
 func MakeCluster(n int, t *testing.T, conf *Config) *cluster {
 	return makeCluster(t, &MakeClusterOpts{
 		Peers:     n,
@@ -776,7 +776,7 @@ func MakeCluster(n int, t *testing.T, conf *Config) *cluster {
 	})
 }
 
-// NOTE: This is exposed for middleware testing purposes and is not a stable API
+// MakeClusterNoBootstrap NOTE: 这是为中间件测试目的而公开的，不是一个稳定的API。
 func MakeClusterNoBootstrap(n int, t *testing.T, conf *Config) *cluster {
 	return makeCluster(t, &MakeClusterOpts{
 		Peers: n,
@@ -784,12 +784,12 @@ func MakeClusterNoBootstrap(n int, t *testing.T, conf *Config) *cluster {
 	})
 }
 
-// NOTE: This is exposed for middleware testing purposes and is not a stable API
+// MakeClusterCustom NOTE: 这是为中间件测试目的而公开的，不是一个稳定的API。
 func MakeClusterCustom(t *testing.T, opts *MakeClusterOpts) *cluster {
 	return makeCluster(t, opts)
 }
 
-// NOTE: This is exposed for middleware testing purposes and is not a stable API
+// FileSnapTest NOTE: 这是为中间件测试目的而公开的，不是一个稳定的API。
 func FileSnapTest(t *testing.T) (string, *FileSnapshotStore) {
 	// Create a test dir
 	dir, err := ioutil.TempDir("", "raft")

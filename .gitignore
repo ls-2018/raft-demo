@@ -1,3 +1,4 @@
 .vscode/
 node*/
+.idea/
 raft-demo
