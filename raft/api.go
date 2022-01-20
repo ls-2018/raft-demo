@@ -105,10 +105,7 @@ type Raft struct {
 	// leaderState 只有 leader 是有此值
 	leaderState leaderState
 
-	// candidateFromLeadershipTransfer is used to indicate that this server became
-	// candidate because the leader tries to transfer leadership. This flag is
-	// used in RequestVoteRequest to express that a leadership transfer is going
-	// on.
+	// candidateFromLeadershipTransfer 表示  leader -> candidate。这个标志在RequestVoteRequest中被用来表示正在进行领导权的转移。进行中。
 	candidateFromLeadershipTransfer bool
 
 	// 服务器的逻辑ID 存储我们的本地服务器ID，用于避免向我们自己发送RPC。
@@ -766,9 +763,9 @@ func (r *Raft) VerifyLeader() Future {
 	}
 }
 
-// GetConfiguration returns the latest configuration. This may not yet be
-// committed. The main loop can access this directly.
+// GetConfiguration 返回最新的配置。这可能还没有被提交。主循环可以直接访问这个。
 func (r *Raft) GetConfiguration() ConfigurationFuture {
+	// 这里没有进行什么实际逻辑，只是将已有的配置封装到了configReq里
 	configReq := &configurationsFuture{}
 	configReq.init()
 	configReq.configurations = configurations{latest: r.getLatestConfiguration()}

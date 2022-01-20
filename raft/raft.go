@@ -1421,7 +1421,7 @@ func (r *Raft) processConfigurationLogEntry(entry *Log) error {
 	return nil
 }
 
-// requestVote is invoked when we get an request vote RPC call.
+// requestVote 当接收到远程的rpc 投票请求 会调用此函数
 func (r *Raft) requestVote(rpc RPC, req *RequestVoteRequest) {
 	r.observe(*req)
 
@@ -1658,7 +1658,7 @@ func (r *Raft) setLastContact() {
 
 type voteResult struct {
 	RequestVoteResponse
-	voterID ServerID
+	voterID ServerID // 选民的逻辑ID
 }
 
 // electSelf 是用来向所有同伴发送一个RequestVote RPC，并为我们自己投票。
@@ -1671,26 +1671,25 @@ func (r *Raft) electSelf() <-chan *voteResult {
 	// 设置任期
 	r.setCurrentTerm(r.getCurrentTerm() + 1)
 
-	// Construct the request
+	// 构建请求
 	lastIdx, lastTerm := r.getLastEntry()
 	req := &RequestVoteRequest{
-		RPCHeader:          r.getRPCHeader(),
-		Term:               r.getCurrentTerm(),
+		RPCHeader:          r.getRPCHeader(),   // 只有协议版本
+		Term:               r.getCurrentTerm(), // 当前任期
 		Candidate:          r.trans.EncodePeer(r.localID, r.localAddr),
 		LastLogIndex:       lastIdx,
 		LastLogTerm:        lastTerm,
-		LeadershipTransfer: r.candidateFromLeadershipTransfer,
+		LeadershipTransfer: r.candidateFromLeadershipTransfer, // 在这为false
 	}
 
-	// Construct a function to ask for a vote
+	// 构建一个请求投票的函数
 	askPeer := func(peer Server) {
 		r.goFunc(func() {
 			resp := &voteResult{voterID: peer.ID}
+			// 发送请求并将结果写入到&resp.RequestVoteResponse
 			err := r.trans.RequestVote(peer.ID, peer.Address, req, &resp.RequestVoteResponse)
 			if err != nil {
-				r.logger.Error("failed to make requestVote RPC",
-					"target", peer,
-					"error", err)
+				r.logger.Error("调用请求投票 RPC失败", "target", peer, "error", err)
 				resp.Term = req.Term
 				resp.Granted = false
 			}
@@ -1698,16 +1697,18 @@ func (r *Raft) electSelf() <-chan *voteResult {
 		})
 	}
 
-	// For each peer, request a vote
+	// 对每一个节点，进行投票请求
+	// TODO 最初 r.configurations.latest 是从快照里读取到的？ 那快照的数据  是怎么写进去的
 	for _, server := range r.configurations.latest.Servers {
 		if server.Suffrage == Voter {
 			if server.ID == r.localID {
-				// Persist a vote for ourselves
+				// 自己
+				// 坚持为自己投票,写db   任期、候选者
 				if err := r.persistVote(req.Term, req.Candidate); err != nil {
-					r.logger.Error("failed to persist vote", "error", err)
+					r.logger.Error("为自己投票失败", "error", err)
 					return nil
 				}
-				// Include our own vote
+				// 包括我们自己的投票
 				respCh <- &voteResult{
 					RequestVoteResponse: RequestVoteResponse{
 						RPCHeader: r.getRPCHeader(),
@@ -1725,7 +1726,7 @@ func (r *Raft) electSelf() <-chan *voteResult {
 	return respCh
 }
 
-// persistVote 用来确保安全的投票,写db
+// persistVote 用来确保安全的投票,写db      任期、竞选者
 func (r *Raft) persistVote(term uint64, candidate []byte) error {
 	if err := r.stable.SetUint64(keyLastVoteTerm, term); err != nil {
 		return err
@@ -1823,12 +1824,8 @@ func (r *Raft) setCommittedConfiguration(c Configuration, i uint64) {
 	r.configurations.committedIndex = i
 }
 
-// getLatestConfiguration reads the configuration from a copy of the main
-// configuration, which means it can be accessed independently from the main
-// loop.
+// getLatestConfiguration 从主配置的副本中读取配置，这意味着它可以独立于主循环访问。
 func (r *Raft) getLatestConfiguration() Configuration {
-	// this switch catches the case where this is called without having set
-	// a configuration previously.
 	switch c := r.latestConfiguration.Load().(type) {
 	case Configuration:
 		return c

@@ -32,8 +32,7 @@ const (
 	// on followers
 	connReceiveBufferSize = 256 * 1024 // 256KB
 
-	// connSendBufferSize is the size of the buffer we will use for sending RPC request data from
-	// the leader to followers.
+	// connSendBufferSize 是我们将用于发送RPC请求数据的缓冲区的大小，从leader到flower。
 	connSendBufferSize = 256 * 1024 // 256KB
 )
 
@@ -78,7 +77,7 @@ type NetworkTransport struct {
 
 	maxPool int
 
-	serverAddressProvider ServerAddressProvider
+	serverAddressProvider ServerAddressProvider // 默认为nil,再测试的时候 会添加内容
 
 	shutdown     bool
 	shutdownCh   chan struct{}
@@ -95,9 +94,9 @@ type NetworkTransport struct {
 	TimeoutScale int
 }
 
-// NetworkTransportConfig encapsulates configuration for the network transport layer.
+// NetworkTransportConfig 封装了网络传输层的配置。
 type NetworkTransportConfig struct {
-	// ServerAddressProvider is used to override the target address when establishing a connection to invoke an RPC
+	// ServerAddressProvider 用于在建立连接以调用RPC时覆盖目标地址。
 	ServerAddressProvider ServerAddressProvider
 
 	Logger hclog.Logger
@@ -127,6 +126,7 @@ type StreamLayer interface {
 	Dial(address ServerAddress, timeout time.Duration) (net.Conn, error)
 }
 
+// 封装了net.Conn
 type netConn struct {
 	target ServerAddress
 	conn   net.Conn
@@ -169,7 +169,7 @@ func NewNetworkTransportWithConfig(config *NetworkTransportConfig) *NetworkTrans
 		stream:                config.Stream,
 		timeout:               config.Timeout,
 		TimeoutScale:          DefaultTimeoutScale,
-		serverAddressProvider: config.ServerAddressProvider,
+		serverAddressProvider: config.ServerAddressProvider, // nil
 	}
 
 	trans.setupStreamContext()
@@ -294,17 +294,18 @@ func (n *NetworkTransport) getPooledConn(target ServerAddress) *netConn {
 	return conn
 }
 
-// getConnFromAddressProvider returns a connection from the server address provider if available, or defaults to a connection using the target server address
+// getConnFromAddressProvider 根据地址获取链接
 func (n *NetworkTransport) getConnFromAddressProvider(id ServerID, target ServerAddress) (*netConn, error) {
 	address := n.getProviderAddressOrFallback(id, target)
 	return n.getConn(address)
 }
 
+// 获得服务地址
 func (n *NetworkTransport) getProviderAddressOrFallback(id ServerID, target ServerAddress) ServerAddress {
 	if n.serverAddressProvider != nil {
 		serverAddressOverride, err := n.serverAddressProvider.ServerAddr(id)
 		if err != nil {
-			n.logger.Warn("unable to get address for server, using fallback address", "id", id, "fallback", target, "error", err)
+			n.logger.Warn("无法获得服务器地址，使用备用地址", "id", id, "fallback", target, "error", err)
 		} else {
 			return serverAddressOverride
 		}
@@ -312,30 +313,24 @@ func (n *NetworkTransport) getProviderAddressOrFallback(id ServerID, target Serv
 	return target
 }
 
-// getConn is used to get a connection from the pool.
+// getConn 从连接池中获取一个节点链接
 func (n *NetworkTransport) getConn(target ServerAddress) (*netConn, error) {
-	// Check for a pooled conn
 	if conn := n.getPooledConn(target); conn != nil {
 		return conn, nil
 	}
-
-	// Dial a new connection
 	conn, err := n.stream.Dial(target, n.timeout)
 	if err != nil {
 		return nil, err
 	}
-
-	// Wrap the conn
 	netConn := &netConn{
 		target: target,
 		conn:   conn,
 		dec:    codec.NewDecoder(bufio.NewReader(conn), &codec.MsgpackHandle{}),
-		w:      bufio.NewWriterSize(conn, connSendBufferSize),
+		w:      bufio.NewWriterSize(conn, connSendBufferSize), // 256KB
 	}
 
 	netConn.enc = codec.NewEncoder(netConn.w, &codec.MsgpackHandle{})
 
-	// Done
 	return netConn, nil
 }
 
@@ -372,25 +367,24 @@ func (n *NetworkTransport) AppendEntries(id ServerID, target ServerAddress, args
 	return n.genericRPC(id, target, rpcAppendEntries, args, resp)
 }
 
-// RequestVote implements the Transport interface.
+// RequestVote 发送投票请求到目标节点
 func (n *NetworkTransport) RequestVote(id ServerID, target ServerAddress, args *RequestVoteRequest, resp *RequestVoteResponse) error {
 	return n.genericRPC(id, target, rpcRequestVote, args, resp)
 }
 
-// genericRPC handles a simple request/response RPC.
+// genericRPC 通用的RPC处理函数
 func (n *NetworkTransport) genericRPC(id ServerID, target ServerAddress, rpcType uint8, args interface{}, resp interface{}) error {
-	// Get a conn
 	conn, err := n.getConnFromAddressProvider(id, target)
 	if err != nil {
 		return err
 	}
 
-	// Set a deadline
+	// 设置超时时间
 	if n.timeout > 0 {
 		conn.conn.SetDeadline(time.Now().Add(n.timeout))
 	}
 
-	// Send the RPC
+	// 发送RPC请求
 	if err = sendRPC(conn, rpcType, args); err != nil {
 		return err
 	}
@@ -441,7 +435,7 @@ func (n *NetworkTransport) InstallSnapshot(id ServerID, target ServerAddress, ar
 	return err
 }
 
-// EncodePeer implements the Transport interface.
+// EncodePeer 是用来序列化一个节点的地址。
 func (n *NetworkTransport) EncodePeer(id ServerID, p ServerAddress) []byte {
 	address := n.getProviderAddressOrFallback(id, p)
 	return []byte(address)
@@ -651,21 +645,23 @@ func decodeResponse(conn *netConn, resp interface{}) (bool, error) {
 	return true, nil
 }
 
-// sendRPC is used to encode and send the RPC.
+// sendRPC 发送请求
 func sendRPC(conn *netConn, rpcType uint8, args interface{}) error {
-	// Write the request type
+	// 先发送请求类型
 	if err := conn.w.WriteByte(rpcType); err != nil {
 		conn.Release()
 		return err
 	}
 
-	// Send the request
+	// 编码请求体
+	// raft/net_transport.go:332
+	// 将编码好的数据，写入到了enc   ;  enc 是封装的w
 	if err := conn.enc.Encode(args); err != nil {
 		conn.Release()
 		return err
 	}
 
-	// Flush
+	// Flush  w也是封装的conn
 	if err := conn.w.Flush(); err != nil {
 		conn.Release()
 		return err

@@ -83,19 +83,17 @@ func (r *RequestVoteRequest) GetRPCHeader() RPCHeader {
 	return r.RPCHeader
 }
 
-// RequestVoteResponse is the response returned from a RequestVoteRequest.
+// RequestVoteResponse   RequestVoteRequest的响应
 type RequestVoteResponse struct {
 	RPCHeader
 
-	// Newer term if leader is out of date.
+	//新的任期 如果leader过期
 	Term uint64
 
-	// Peers is deprecated, but required by servers that only understand
-	// protocol version 0. This is not populated in protocol version 2
-	// and later.
+	// Peers 已被废弃，但只理解协议版本0的服务器需要它。 在协议版本2及以后的版本中，它不被填充。
 	Peers []byte
 
-	// Is the vote granted.
+	// 是否批准投票。
 	Granted bool
 }
 

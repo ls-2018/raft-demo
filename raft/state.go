@@ -150,8 +150,7 @@ func (r *raftState) getLastIndex() uint64 {
 	return max(r.lastLogIndex, r.lastSnapshotIndex)
 }
 
-// getLastEntry returns the last index and term in stable storage.
-// Either from the last log or from the last snapshot.
+// getLastEntry 返回最新的日志索引 、任期
 func (r *raftState) getLastEntry() (uint64, uint64) {
 	r.lastLock.Lock()
 	defer r.lastLock.Unlock()
