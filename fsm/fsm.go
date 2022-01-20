@@ -3,7 +3,6 @@ package fsm
 import (
 	"bufio"
 	"encoding/json"
-	"fmt"
 	"io"
 	"raft-demo/raft"
 	"strings"
@@ -22,7 +21,6 @@ func NewFsm() *Fsm {
 }
 
 func (f *Fsm) Apply(l *raft.Log) interface{} {
-	fmt.Println("apply data:", string(l.Data))
 	data := strings.Split(string(l.Data), ",")
 	op := data[0]
 	if op == "set" {

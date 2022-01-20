@@ -2,21 +2,17 @@ package raft
 
 import "fmt"
 
-// ServerSuffrage determines whether a Server in a Configuration gets a vote.
+// ServerSuffrage 决定一个配置中的服务器是否得到投票。
 type ServerSuffrage int
 
-// Note: Don't renumber these, since the numbers are written into the log.
+// Note: 不要对这些进行重新编号，因为这些数字会被写进日志。
 const (
-	// Voter is a server whose vote is counted in elections and whose match index
-	// is used in advancing the leader's commit index.
+	// Voter 选民
 	Voter ServerSuffrage = iota
-	// Nonvoter is a server that receives log entries but is not considered for
-	// elections or commitment purposes.
+	// Nonvoter 非选民，只用来接收日志
 	Nonvoter
-	// Staging is a server that acts like a nonvoter with one exception: once a
-	// staging server receives enough log entries to be sufficiently caught up to
-	// the leader's log, the leader will invoke a  membership change to change
-	// the Staging server to a Voter.
+	// Staging 介于  Voter 与 Nonvoter 之间的一个状态
+	// 是一个像非选民一样行事的服务器，但有一个例外：一旦中转服务器收到足够多的日志条目，足以赶上领导者的日志，领导者将调用成员变更，将中转服务器改为选民。
 	Staging
 )
 
@@ -58,13 +54,13 @@ type ServerID string
 // ServerAddress 一个可以通信的服务端点
 type ServerAddress string
 
-// Server tracks the information about a single server in a configuration.
+// Server 追踪配置中单个服务器的信息。
 type Server struct {
-	// Suffrage determines whether the server gets a vote.
+	// Suffrage 决定了服务器是否获得投票。
 	Suffrage ServerSuffrage
-	// ID is a unique string identifying this server for all time.
+	// ID 是一个唯一的字符串，用于在任何时间识别该节点
 	ID ServerID
-	// Address is its network address that a transport can contact.
+	// Address 可以通信的服务地址
 	Address ServerAddress
 }
 
@@ -160,8 +156,7 @@ func (c *configurations) Clone() (copy configurations) {
 	return
 }
 
-// hasVote returns true if the server identified by 'id' is a Voter in the
-// provided Configuration.
+// hasVote 如果'id'标识的服务器是所提供的配置中的一个选民，则返回true。
 func hasVote(configuration Configuration, id ServerID) bool {
 	for _, server := range configuration.Servers {
 		if server.ID == id {

@@ -5,21 +5,20 @@ import (
 	"sync"
 )
 
-// Commitment is used to advance the leader's commit index. The leader and
-// replication goroutines report in newly written entries with Match(), and
-// this notifies on commitCh when the commit index has advanced.
+// Commitment 用来推进领导者的commit索引。
+// 1、leader和复制程序用Match()报告新写入的条目，
+// 2、在commitCh获取事件
 type commitment struct {
-	// protects matchIndexes and commitIndex
+	// 保护 matchIndexes 、 commitIndex
 	sync.Mutex
-	// notified when commitIndex increases
+	// 当 commitIndex 增加时通知
 	commitCh chan struct{}
-	// voter ID to log index: the server stores up through this log entry
+	// 选民的日志索引,服务器通过日志条目存储起来
 	matchIndexes map[ServerID]uint64
 	// a quorum stores up through this log entry. monotonically increases.
+	// 一个法定人数通过这个日志条目存储起来，单调地增加。
 	commitIndex uint64
-	// the first index of this leader's term: this needs to be replicated to a
-	// majority of the cluster before this leader may mark anything committed
-	// (per Raft's commitment rule)
+	// 这个leader任期的第一个索引：在这个leader可以标记任何已承诺的事情之前，这需要复制到集群的大多数。(根据Raft的承诺规则)
 	startIndex uint64
 }
 
@@ -60,29 +59,29 @@ func (c *commitment) setConfiguration(configuration Configuration) {
 	c.recalculate()
 }
 
-// Called by leader after commitCh is notified
+// 领导者在接到 commitCh 的通知后调用
 func (c *commitment) getCommitIndex() uint64 {
 	c.Lock()
 	defer c.Unlock()
 	return c.commitIndex
 }
 
-// Match is called once a server completes writing entries to disk: either the
-// leader has written the new entry or a follower has replied to an
-// AppendEntries RPC. The given server's disk agrees with this server's log up
-// through the given index.
+// 一旦服务器完成了向磁盘写入条目的工作，就会调用Match：
+// 要么是leader写入了新条目；
+// 要么是flower回复了AppendEntries RPC。给定的服务器的磁盘与该服务器的日志在给定的索引前一致。
 func (c *commitment) match(server ServerID, matchIndex uint64) {
 	c.Lock()
 	defer c.Unlock()
+	// 当前选民的日志索引 存在，且当前的日志索引大于之前的存储的
 	if prev, hasVote := c.matchIndexes[server]; hasVote && matchIndex > prev {
 		c.matchIndexes[server] = matchIndex
 		c.recalculate()
 	}
 }
 
-// Internal helper to calculate new commitIndex from matchIndexes.
-// Must be called with lock held.
+// 内部帮助程序，从matchIndexes计算新的commitIndex。必须在锁定的情况下调用。
 func (c *commitment) recalculate() {
+	// 选民的日志索引
 	if len(c.matchIndexes) == 0 {
 		return
 	}
@@ -93,7 +92,10 @@ func (c *commitment) recalculate() {
 	}
 	sort.Sort(uint64Slice(matched))
 	quorumMatchIndex := matched[(len(matched)-1)/2]
+	// 日志索引的中间数
 
+	// 提交数小于中间数 且 中间数>= leader任期开始时的索引数
+	// TODO 说明：一个日志落后的node成为了leader
 	if quorumMatchIndex > c.commitIndex && quorumMatchIndex >= c.startIndex {
 		c.commitIndex = quorumMatchIndex
 		asyncNotifyCh(c.commitCh)

@@ -38,7 +38,7 @@ type followerReplication struct {
 	// which may fall past the end of the log.
 	nextIndex uint64
 
-	// peer contains the network address and ID of the remote follower.
+	// peer 包含远程flower的网络地址和ID。
 	peer Server
 	// peerLock protects 'peer'
 	peerLock sync.RWMutex
@@ -416,7 +416,7 @@ func (r *Raft) heartbeat(s *followerReplication, stopCh chan struct{}) {
 // back to the standard replication which can handle more complex situations.
 func (r *Raft) pipelineReplicate(s *followerReplication) error {
 	s.peerLock.RLock()
-	peer := s.peer
+	peer := s.peer // flower节点
 	s.peerLock.RUnlock()
 
 	// Create a new pipeline
@@ -426,18 +426,18 @@ func (r *Raft) pipelineReplicate(s *followerReplication) error {
 	}
 	defer pipeline.Close()
 
-	// Log start and stop of pipeline
-	r.logger.Info("pipelining replication", "peer", peer)
-	defer r.logger.Info("aborting pipeline replication", "peer", peer)
+	// 记录管道的启动和停止
+	r.logger.Info("流水线复制", "flower node", peer)
+	defer r.logger.Info("中止流水线复制", "flower node", peer)
 
-	// Create a shutdown and finish channel
+	// 创建停止、结束 channel
 	stopCh := make(chan struct{})
 	finishCh := make(chan struct{})
 
-	// Start a dedicated decoder
+	// 启动一个专门的解码器
 	r.goFunc(func() { r.pipelineDecode(s, pipeline, stopCh, finishCh) })
 
-	// Start pipeline sends at the last good nextIndex
+	// 在最后一个好的NextIndex处开始 管道发送
 	nextIndex := atomic.LoadUint64(&s.nextIndex)
 
 	shouldStop := false
@@ -447,7 +447,7 @@ SEND:
 		case <-finishCh:
 			break SEND
 		case maxIndex := <-s.stopCh:
-			// Make a best effort to replicate up to this index
+			// 尽最大努力复制到这个索引
 			if maxIndex > 0 {
 				r.pipelineSend(s, pipeline, &nextIndex, maxIndex)
 			}
@@ -458,7 +458,7 @@ SEND:
 			if !shouldStop {
 				deferErr.respond(nil)
 			} else {
-				deferErr.respond(fmt.Errorf("replication failed"))
+				deferErr.respond(fmt.Errorf("复制出错"))
 			}
 		case <-s.triggerCh:
 			lastLogIdx, _ := r.getLastLog()
@@ -469,7 +469,7 @@ SEND:
 		}
 	}
 
-	// Stop our decoder, and wait for it to finish
+	// 停止解码器，等待结束
 	close(stopCh)
 	select {
 	case <-finishCh:

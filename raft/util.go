@@ -66,8 +66,7 @@ func generateUUID() string {
 		buf[10:16])
 }
 
-// asyncNotifyCh is used to do an async channel send
-// to a single channel without blocking.
+// asyncNotifyCh 是用来做一个异步的通道，发送到一个单一的通道而不阻塞。
 func asyncNotifyCh(ch chan struct{}) {
 	select {
 	case ch <- struct{}{}:
@@ -75,8 +74,7 @@ func asyncNotifyCh(ch chan struct{}) {
 	}
 }
 
-// drainNotifyCh empties out a single-item notification channel without
-// blocking, and returns whether it received anything.
+// drainNotifyCh 清空一个channel，而不发生阻塞。并返回它是否收到任何东西。
 func drainNotifyCh(ch chan struct{}) bool {
 	select {
 	case <-ch:
@@ -143,7 +141,7 @@ func backoff(base time.Duration, round, limit uint64) time.Duration {
 	return base
 }
 
-// Needed for sorting []uint64, used to determine commitment
+// 需要进行排序[]uint64，用于确定commit。
 type uint64Slice []uint64
 
 func (p uint64Slice) Len() int           { return len(p) }

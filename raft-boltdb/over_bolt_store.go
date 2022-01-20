@@ -1,6 +1,7 @@
 package raftboltdb
 
 import (
+	"fmt"
 	"github.com/boltdb/bolt"
 	"raft-demo/raft"
 	. "raft-demo/raft-boltdb/var"
@@ -160,6 +161,7 @@ func (b *BoltStore) StoreLogs(logs []*raft.Log) error {
 	}
 	defer tx.Rollback()
 	for _, log := range logs {
+		fmt.Printf("---------> 存储数据 key: %+v,value :%+v\n",log.Index,log)
 		key := uint64ToBytes(log.Index)
 		val, err := encodeMsgPack(log)
 		if err != nil {
@@ -170,7 +172,6 @@ func (b *BoltStore) StoreLogs(logs []*raft.Log) error {
 			return err
 		}
 	}
-
 	return tx.Commit()
 }
 

@@ -77,12 +77,12 @@ type commitTuple struct {
 	future *logFuture
 }
 
-// leaderState is state that is used while we are a leader.
+// leaderState 是我们做领导时使用的状态。
 type leaderState struct {
-	leadershipTransferInProgress int32 // indicates that a leadership transfer is in progress.
+	leadershipTransferInProgress int32 // 表示领导权转移正在进行中。
 	commitCh                     chan struct{}
 	commitment                   *commitment
-	inflight                     *list.List // list of logFuture in log index order
+	inflight                     *list.List // 按日志索引顺序排列的logFuture列表
 	replState                    map[ServerID]*followerReplication
 	notify                       map[*verifyFuture]struct{}
 	stepDown                     chan struct{}
@@ -176,6 +176,7 @@ func (r *Raft) runFollower() {
 			b.respond(r.liveBootstrap(b.configuration))
 
 		case <-heartbeatTimer:
+			// node 启动后，默认等待超时，然后进入这里
 			// 重新启动心跳定时器
 			hbTimeout := r.config().HeartbeatTimeout
 			heartbeatTimer = randomTimeout(hbTimeout)
@@ -183,31 +184,33 @@ func (r *Raft) runFollower() {
 			// 检查我们是否有成功的联系
 			lastContact := r.LastContact()
 			if time.Now().Sub(lastContact) < hbTimeout {
+				// 与上次通信时间之差  小于 心跳超时时间
 				continue
 			}
 
-			// Heartbeat failed! Transition to the candidate state
+			// 心跳检查失败，进入候选者状态
 			lastLeader := r.Leader()
 			r.setLeader("")
 
 			if r.configurations.latestIndex == 0 {
 				if !didWarn {
-					r.logger.Warn("no known peers, aborting election")
+					r.logger.Warn("没有已知的peers，中止选举")
 					didWarn = true
 				}
-			} else if r.configurations.latestIndex == r.configurations.committedIndex &&
-				!hasVote(r.configurations.latest, r.localID) {
+				//	最新日志==已提交日志 && 本节点的逻辑ID 不是一个选民
+			} else if r.configurations.latestIndex == r.configurations.committedIndex && !hasVote(r.configurations.latest, r.localID) {
 				if !didWarn {
-					r.logger.Warn("not part of stable configuration, aborting election")
+					r.logger.Warn("不是稳定配置的一部分，中止选举")
 					didWarn = true
 				}
 			} else {
+				// 是一个选民
 				if hasVote(r.configurations.latest, r.localID) {
-					r.logger.Warn("heartbeat timeout reached, starting election", "last-leader", lastLeader)
+					r.logger.Warn("心跳超时，开始选举", "上一次的leader", lastLeader) // 上一次的leader
 					r.setState(Candidate)
 					return
 				} else if !didWarn {
-					r.logger.Warn("heartbeat timeout reached, not part of a stable configuration or a non-voter, not triggering a leader election")
+					r.logger.Warn("达到心跳超时，不是稳定配置的一部分或非投票者，没有触发领导者选举")
 					didWarn = true
 				}
 			}
@@ -240,11 +243,10 @@ func (r *Raft) liveBootstrap(configuration Configuration) error {
 	return r.processConfigurationLogEntry(&entry)
 }
 
-// runCandidate runs the FSM for a candidate.
+// runCandidate 为一个candidate运行FSM
 func (r *Raft) runCandidate() {
-	r.logger.Info("entering candidate state", "node", r, "term", r.getCurrentTerm()+1)
 
-	// Start vote for us, and set a timeout
+	// 首先投自己一票，并设置选举超时
 	voteCh := r.electSelf()
 
 	// Make sure the leadership transfer flag is reset after each run. Having this
@@ -745,12 +747,12 @@ func (r *Raft) leaderLoop() {
 			b.respond(ErrCantBootstrap)
 
 		case newLog := <-r.applyCh:
-			if r.getLeadershipTransferInProgress() {
+			if r.getLeadershipTransferInProgress() { // 判断是不是在转移leader
 				r.logger.Debug(ErrLeadershipTransferInProgress.Error())
 				newLog.respond(ErrLeadershipTransferInProgress)
 				continue
 			}
-			// Group commit, gather all the ready commits
+			// 集体提交，收集所有准备好的提交
 			ready := []*logFuture{newLog}
 		GROUP_COMMIT_LOOP:
 			for i := 0; i < r.config().MaxAppendEntries; i++ {
@@ -762,9 +764,9 @@ func (r *Raft) leaderLoop() {
 				}
 			}
 
-			// Dispatch the logs
+			// 发送日志
 			if stepDown {
-				// we're in the process of stepping down as leader, don't process anything new
+				// 我们正在卸任领导职务，不要处理任何新的数据。
 				for i := range ready {
 					ready[i].respond(ErrNotLeader)
 				}
@@ -1066,18 +1068,18 @@ func (r *Raft) appendConfigurationEntry(future *configurationChangeFuture) {
 	r.startStopReplication()
 }
 
-// dispatchLog is called on the leader to push a log to disk, mark it
-// as inflight and begin replication of it.
+// dispatchLog在领导层被调用，以推送日志到磁盘。 标记它 并开始对其进行复制。不会并发调用
 func (r *Raft) dispatchLogs(applyLogs []*logFuture) {
 	now := time.Now()
 
-	term := r.getCurrentTerm()
-	lastIndex := r.getLastIndex()
+	term := r.getCurrentTerm()    // 当前任期
+	lastIndex := r.getLastIndex() // 最新的日志索引
 
 	n := len(applyLogs)
 	logs := make([]*Log, n)
 
 	for idx, applyLog := range applyLogs {
+		// 对即将写入磁盘的LogFuture结构体设置一些信息
 		applyLog.dispatch = now
 		lastIndex++
 		applyLog.log.Index = lastIndex
@@ -1087,21 +1089,23 @@ func (r *Raft) dispatchLogs(applyLogs []*logFuture) {
 		r.leaderState.inflight.PushBack(applyLog)
 	}
 
-	// Write the log entry locally
+	// 在本地写入日志条目
 	if err := r.logs.StoreLogs(logs); err != nil {
-		r.logger.Error("failed to commit logs", "error", err)
+		r.logger.Error("提交日志失败", "error", err)
+		// 设置LogFuture的响应
 		for _, applyLog := range applyLogs {
 			applyLog.respond(err)
 		}
+		// 更改状态
 		r.setState(Follower)
 		return
 	}
 	r.leaderState.commitment.match(r.localID, lastIndex)
 
-	// Update the last log since it's on disk now
+	// 更新最后的日志，因为它现在已经在磁盘上了   ,并没有commit
 	r.setLastLog(lastIndex, term)
 
-	// Notify the replicators of the new log
+	// 将新的日志通知给复制者
 	for _, f := range r.leaderState.replState {
 		asyncNotifyCh(f.triggerCh)
 	}
@@ -1253,8 +1257,7 @@ func (r *Raft) processHeartbeat(rpc RPC) {
 	}
 }
 
-// appendEntries is invoked when we get an append entries RPC call. This must
-// only be called from the main thread.
+// appendEntries 当我们得到一个追加条目的RPC调用时被调用。这必须只在主线程中调用。
 func (r *Raft) appendEntries(rpc RPC, a *AppendEntriesRequest) {
 	// Setup a response
 	resp := &AppendEntriesResponse{
@@ -1396,7 +1399,7 @@ func (r *Raft) appendEntries(rpc RPC, a *AppendEntriesRequest) {
 // processConfigurationLogEntry
 // 从logState中获取快照中没有的数据,然后对每一个log 调用此函数
 func (r *Raft) processConfigurationLogEntry(entry *Log) error {
-	fmt.Printf("%+v\n", *entry)
+	fmt.Printf("======>  %+v\n", *entry)
 	switch entry.Type {
 	case LogConfiguration: //
 		r.setCommittedConfiguration(r.configurations.latest, r.configurations.latestIndex)
@@ -1646,7 +1649,7 @@ func (r *Raft) installSnapshot(rpc RPC, req *InstallSnapshotRequest) {
 	return
 }
 
-// setLastContact is used to set the last contact time to now
+// setLastContact 设置与 leader 心跳通信的时间
 func (r *Raft) setLastContact() {
 	r.lastContactLock.Lock()
 	r.lastContact = time.Now()
@@ -1658,15 +1661,14 @@ type voteResult struct {
 	voterID ServerID
 }
 
-// electSelf is used to send a RequestVote RPC to all peers, and vote for
-// ourself. This has the side affecting of incrementing the current term. The
-// response channel returned is used to wait for all the responses (including a
-// vote for ourself). This must only be called from the main thread.
+// electSelf 是用来向所有同伴发送一个RequestVote RPC，并为我们自己投票。
+// 这有一个副作用，就是增加了当前的任期。返回的响应通道被用来等待所有的响应（包括对我们自己的投票）。这必须只在主线程中调用。
 func (r *Raft) electSelf() <-chan *voteResult {
-	// Create a response channel
+	r.logger.Info("进入选举状态", "node", r, "term", r.getCurrentTerm()+1)
+	// 构建响应channel      ,最多会有 这么多投票
 	respCh := make(chan *voteResult, len(r.configurations.latest.Servers))
 
-	// Increment the term
+	// 设置任期
 	r.setCurrentTerm(r.getCurrentTerm() + 1)
 
 	// Construct the request
@@ -1723,7 +1725,7 @@ func (r *Raft) electSelf() <-chan *voteResult {
 	return respCh
 }
 
-// persistVote is used to persist our vote for safety.
+// persistVote 用来确保安全的投票,写db
 func (r *Raft) persistVote(term uint64, candidate []byte) error {
 	if err := r.stable.SetUint64(keyLastVoteTerm, term); err != nil {
 		return err

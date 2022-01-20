@@ -92,7 +92,7 @@ type Raft struct {
 	fsmSnapshotCh chan *reqSnapshotFuture
 
 	// lastContact 是我们最后一次与领导节点通信的时间。这可以用来衡量呆滞性。
-	lastContact     time.Time
+	lastContact     time.Time // 默认是零值，即0001-01-01 00:00:00 +0000
 	lastContactLock sync.RWMutex
 
 	// Leader 当前的集群leader地址
@@ -680,9 +680,7 @@ func (r *Raft) BootstrapCluster(configuration Configuration) Future {
 	}
 }
 
-// Leader is used to return the current leader of the cluster.
-// It may return empty string if there is no current leader
-// or the leader is unknown.
+// Leader 用来返回集群的当前leader。如果没有当前的leader未知，它可能返回空字符串。
 func (r *Raft) Leader() ServerAddress {
 	r.leaderLock.RLock()
 	leader := r.leader
@@ -996,8 +994,7 @@ func (r *Raft) String() string {
 	return fmt.Sprintf("Node at %s [%v]", r.localAddr, r.getState())
 }
 
-// LastContact returns the time of last contact by a leader.
-// This only makes sense if we are currently a follower.
+// LastContact 返回与leader最后一次通信的时间。这只有在我们目前是flower的情况下才有意义。
 func (r *Raft) LastContact() time.Time {
 	r.lastContactLock.RLock()
 	last := r.lastContact

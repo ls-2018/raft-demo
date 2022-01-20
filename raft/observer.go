@@ -43,42 +43,35 @@ type ResumedHeartbeatObservation struct {
 // deregistration.
 var nextObserverID uint64
 
-// FilterFn is a function that can be registered in order to filter observations.
-// The function reports whether the observation should be included - if
-// it returns false, the observation will be filtered out.
+// FilterFn 是一个可以注册的函数，以便过滤观察结果。该函数报告观察值是否应该被包括在内--如果它返回false，观察值将被过滤掉。
 type FilterFn func(o *Observation) bool
 
-// Observer describes what to do with a given observation.
+// Observer 描述了如何处理一个给定的观察结果。
 type Observer struct {
-	// numObserved and numDropped are performance counters for this observer.
-	// 64 bit types must be 64 bit aligned to use with atomic operations on
-	// 32 bit platforms, so keep them at the top of the struct.
-	numObserved uint64
-	numDropped  uint64
+	// numObserved and numDropped 是 该观察者的性能计数器。
+	// 64位的类型必须是64位对齐的，以用于原子操作的
+	// 32位平台，所以把它们放在结构的顶部。
+	numObserved uint64 // 接收到的事件
+	numDropped  uint64 // 因阻塞而drop掉的事件
 
-	// channel receives observations.
+	// channel 接收观察结果
 	channel chan Observation
 
-	// blocking, if true, will cause Raft to block when sending an observation
-	// to this observer. This should generally be set to false.
+	// blocking, 如果为真，将导致Raft在发送观察结果到这个观察者时阻塞 ，会导致Raft阻塞。这通常应该被设置为false。
 	blocking bool
 
-	// filter will be called to determine if an observation should be sent to
-	// the channel.
+	// filter 将被调用，以确定是否应将观察结果发送到通道。
 	filter FilterFn
 
-	// id is the ID of this observer in the Raft map.
+	// id 是该观察者在Raft map 中的ID。
 	id uint64
 }
 
-// NewObserver creates a new observer that can be registered
-// to make observations on a Raft instance. Observations
-// will be sent on the given channel if they satisfy the
-// given filter.
-//
-// If blocking is true, the observer will block when it can't
-// send on the channel, otherwise it may discard events.
+// NewObserver
+// 创建一个新的观察者，可以被注册来对raft实例进行观察。如果观察结果满足给定的过滤器，就会在给定的通道上发送。
+// 如果阻塞为真，观察者将在无法在通道上发送时阻塞，否则它可能会丢弃事件。
 func NewObserver(channel chan Observation, blocking bool, filter FilterFn) *Observer {
+	// 每个节点都会有一个观察者  n*n
 	return &Observer{
 		channel:  channel,
 		blocking: blocking,
@@ -97,14 +90,14 @@ func (or *Observer) GetNumDropped() uint64 {
 	return atomic.LoadUint64(&or.numDropped)
 }
 
-// RegisterObserver registers a new observer.
+// RegisterObserver 注册一个观察者
 func (r *Raft) RegisterObserver(or *Observer) {
 	r.observersLock.Lock()
 	defer r.observersLock.Unlock()
 	r.observers[or.id] = or
 }
 
-// DeregisterObserver deregisters an observer.
+// DeregisterObserver 取消一个观察者
 func (r *Raft) DeregisterObserver(or *Observer) {
 	r.observersLock.Lock()
 	defer r.observersLock.Unlock()
@@ -113,25 +106,26 @@ func (r *Raft) DeregisterObserver(or *Observer) {
 
 // observe 向每个node发送了一个观察结果。
 func (r *Raft) observe(o interface{}) {
-	// In general observers should not block. But in any case this isn't
-	// disastrous as we only hold a read lock, which merely prevents
-	// registration / deregistration of observers.
+	// 一般来说，观察员不应该阻止。但在任何情况下，这都不是灾难性的，因为我们只持有一个读锁，这只是防止观察者的注册/取消注册。
 	r.observersLock.RLock()
 	defer r.observersLock.RUnlock()
 	for _, or := range r.observers {
-		// It's wasteful to do this in the loop, but for the common case
-		// where there are no observers we won't create any objects.
+		// 在循环中这样做是很浪费的，但对于没有观察者的常见情况，我们不会创建任何对象。
 		ob := Observation{Raft: r, Data: o}
 		if or.filter != nil && !or.filter(&ob) {
+			// 过滤函数不为空,     如果它返回false，观察值将被过滤掉。
 			continue
 		}
 		if or.channel == nil {
+			// 接收事件的通道
 			continue
 		}
 		if or.blocking {
+			// 阻塞式发送
 			or.channel <- ob
 			atomic.AddUint64(&or.numObserved, 1)
 		} else {
+			// 非阻塞式发送
 			select {
 			case or.channel <- ob:
 				atomic.AddUint64(&or.numObserved, 1)

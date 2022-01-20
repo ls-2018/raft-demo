@@ -124,10 +124,7 @@ type Config struct {
 	// CommitTimeout 控制在我们心跳之前没有Apply()操作的时间，以确保及时提交。由于随机交错，可能会延迟到这个值的2倍之多。
 	CommitTimeout time.Duration
 
-	// MaxAppendEntries controls the maximum number of append entries
-	// to send at once. We want to strike a balance between efficiency
-	// and avoiding waste if the follower is going to reject because of
-	// an inconsistent log.
+	// MaxAppendEntries 控制一次性发送的最大追加日志数。我们想在效率和避免浪费之间取得平衡，如果flower要因为不一致的日志而拒绝的话。
 	MaxAppendEntries int
 
 	// BatchApplyCh 表示我们是否应该将applyCh缓冲到MaxAppendEntries大小。

@@ -100,3 +100,32 @@
 纠正：3个节点宕机2个，剩下一个不可用，怎么处理请求的强一致？
 
 答：这个时候服务应该是不可用的，当然如果要强行提供查询的服务，强一致肯定是无法保证的。
+
+
+
+### raft-stable.db
+```azure
+CurrentTerm:2
+LastVoteCand: 127.0.0.1:10000
+LastVoteTerm: 2
+```
+
+### raft-log.db
+```
+key: 84,value :&{Index:84 Term:2 Type:LogCommand Data:[115 101 116 44 97 43 56 49 44 56 49] Extensions:[] AppendedAt:2022-01-20 11:02:35.959754 +0800 CST m=+8.364670689}
+key: 85,value :&{Index:85 Term:2 Type:LogCommand Data:[115 101 116 44 97 43 56 50 44 56 50] Extensions:[] AppendedAt:2022-01-20 11:02:35.998264 +0800 CST m=+8.403179990}
+key: 86,value :&{Index:86 Term:2 Type:LogCommand Data:[115 101 116 44 97 43 56 51 44 56 51] Extensions:[] AppendedAt:2022-01-20 11:02:36.036569 +0800 CST m=+8.441484039}
+key: 87,value :&{Index:87 Term:2 Type:LogCommand Data:[115 101 116 44 97 43 56 52 44 56 52] Extensions:[] AppendedAt:2022-01-20 11:02:36.075577 +0800 CST m=+8.480490624}
+key: 88,value :&{Index:88 Term:2 Type:LogCommand Data:[115 101 116 44 97 43 56 53 44 56 53] Extensions:[] AppendedAt:2022-01-20 11:02:36.113767 +0800 CST m=+8.518679029}
+key: 89,value :&{Index:89 Term:2 Type:LogCommand Data:[115 101 116 44 97 43 56 54 44 56 54] Extensions:[] AppendedAt:2022-01-20 11:02:36.153333 +0800 CST m=+8.558243818}
+key: 90,value :&{Index:90 Term:2 Type:LogCommand Data:[115 101 116 44 97 43 56 55 44 56 55] Extensions:[] AppendedAt:2022-01-20 11:02:36.192726 +0800 CST m=+8.597637183}
+key: 91,value :&{Index:91 Term:2 Type:LogCommand Data:[115 101 116 44 97 43 56 56 44 56 56] Extensions:[] AppendedAt:2022-01-20 11:02:36.232636 +0800 CST m=+8.637545273}
+key: 92,value :&{Index:92 Term:2 Type:LogCommand Data:[115 101 116 44 97 43 56 57 44 56 57] Extensions:[] AppendedAt:2022-01-20 11:02:36.246781 +0800 CST m=+8.651689157}
+key: 93,value :&{Index:93 Term:2 Type:LogCommand Data:[115 101 116 44 97 43 57 48 44 57 48] Extensions:[] AppendedAt:2022-01-20 11:02:36.275155 +0800 CST m=+8.680062738}
+key: 94,value :&{Index:94 Term:2 Type:LogCommand Data:[115 101 116 44 97 43 57 49 44 57 49] Extensions:[] AppendedAt:2022-01-20 11:02:36.314457 +0800 CST m=+8.719363894}
+key: 95,value :&{Index:95 Term:2 Type:LogCommand Data:[115 101 116 44 97 43 57 50 44 57 50] Extensions:[] AppendedAt:2022-01-20 11:02:36.354387 +0800 CST m=+8.759292103}
+key: 96,value :&{Index:96 Term:2 Type:LogCommand Data:[115 101 116 44 97 43 57 51 44 57 51] Extensions:[] AppendedAt:2022-01-20 11:02:36.393048 +0800 CST m=+8.797952296}
+key: 97,value :&{Index:97 Term:2 Type:LogCommand Data:[115 101 116 44 97 43 57 52 44 57 52] Extensions:[] AppendedAt:2022-01-20 11:02:36.431691 +0800 CST m=+8.836593571}
+key: 98,value :&{Index:98 Term:2 Type:LogCommand Data:[115 101 116 44 97 43 57 53 44 57 53] Extensions:[] AppendedAt:2022-01-20 11:02:36.471694 +0800 CST m=+8.876595735}
+key: 99,value :&{Index:99 Term:2 Type:LogCommand Data:[115 101 116 44 97 43 57 54 44 57 54] Extensions:[] AppendedAt:2022-01-20 11:02:36.510897 +0800 CST m=+8.915797453}
+```

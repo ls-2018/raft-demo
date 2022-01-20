@@ -28,8 +28,9 @@ func init() {
 	flag.StringVar(&httpAddr, "http_addr", "127.0.0.1:10001", "http listen addr")
 	flag.StringVar(&raftAddr, "raft_addr", "127.0.0.1:10000", "raft listen addr")
 	flag.StringVar(&raftId, "raft_id", "1", "raft id")
-	//flag.StringVar(&raftCluster, "raft_cluster", "1/127.0.0.1:10000,2/127.0.0.1:20000,3/127.0.0.1:30000", "cluster info")
-	flag.StringVar(&raftCluster, "raft_cluster", "1/127.0.0.1:10000", "cluster info")
+	//flag.StringVar(&raftId, "raft_id", "x1", "raft id")
+	flag.StringVar(&raftCluster, "raft_cluster", "1/127.0.0.1:10000,2/127.0.0.1:20000,3/127.0.0.1:30000", "cluster info")
+	//flag.StringVar(&raftCluster, "raft_cluster", "1/127.0.0.1:10000", "cluster info")
 }
 
 // go build -mod vendor
@@ -75,28 +76,28 @@ func main() {
 
 	http.HandleFunc("/set", httpServer.Set)
 	http.HandleFunc("/get", httpServer.Get)
-	//go func() {
-	//	time.Sleep(time.Second * 10)
-	//	for i := 0; i < 100; i++ {
-	//		data := "set" + "," + fmt.Sprintf("%d", i) + "," + fmt.Sprintf("%d", i)
-	//
-	//		value := httpServer.fsm.DataBase.Get(fmt.Sprintf("%d", i))
-	//		if value != "" {
-	//			fmt.Println("---->", data)
-	//		} else {
-	//			future := httpServer.ctx.Apply([]byte(data), 5*time.Second)
-	//			if err := future.Error(); err != nil {
-	//			}
-	//		}
-	//
-	//	}
-	//	snapshot, err := httpServer.ctx.TakeSnapshot()
-	//	if err != nil {
-	//		return
-	//	}
-	//	fmt.Println(snapshot)
-	//
-	//}()
+	go func() {
+		time.Sleep(time.Second * 5)
+		for i := 0; i < 100; i++ {
+			data := "set" + "," + fmt.Sprintf("a+%d", i) + "," + fmt.Sprintf("%d", i)
+
+			value := httpServer.fsm.DataBase.Get(fmt.Sprintf("%d", i))
+			if value != "" {
+				fmt.Println("---->", data)
+			} else {
+				future := httpServer.ctx.Apply([]byte(data), 5*time.Second)
+				if err := future.Error(); err != nil {
+				}
+			}
+
+		}
+		snapshot, err := httpServer.ctx.TakeSnapshot()
+		if err != nil {
+			return
+		}
+		fmt.Println("-------->",snapshot)
+
+	}()
 	http.ListenAndServe(httpAddr, nil)
 
 	// 关闭raft
