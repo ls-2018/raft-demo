@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/go-hclog"
+	. "raft-demo/raft-boltdb/var"
 )
 
 const (
@@ -41,17 +42,15 @@ func (r *Raft) checkRPCHeader(rpc RPC) error {
 	}
 	header := wh.GetRPCHeader()
 
-	// 首先检查协议版本
+	// 首先检查协议版本  0，1，2，3
 	if header.ProtocolVersion < ProtocolVersionMin || header.ProtocolVersion > ProtocolVersionMax {
 		return ErrUnsupportedProtocol
 	}
 
-	// Second check is whether we should support this message, given the
-	// current protocol we are configured to run. This will drop support
-	// for protocol version 0 starting at protocol version 2, which is
-	// currently what we want, and in general support one version back. We
-	// may need to revisit this policy depending on how future protocol
-	// changes evolve.
+	// 第二个检查是，考虑到我们当前配置运行的协议，我们是否应该支持这个消息。
+	// 这将放弃对协议版本0的支持，从协议版本2开始，这是目前我们想要的，一般情况下，支持一个版本后。
+	// 我们可能需要重新审视这个策略，这取决于未来协议的 的变化，我们可能需要重新审视这个政策。
+	// 请求的协议版本，不能低于当前版本-1
 	if header.ProtocolVersion < r.config().ProtocolVersion-1 {
 		return ErrUnsupportedProtocol
 	}
@@ -1205,6 +1204,7 @@ func (r *Raft) prepareLog(l *Log, future *logFuture) *commitTuple {
 
 // processRPC 处理rpc请求
 func (r *Raft) processRPC(rpc RPC) {
+	// 版本检查
 	if err := r.checkRPCHeader(rpc); err != nil {
 		rpc.Respond(nil, err)
 		return
@@ -1220,8 +1220,7 @@ func (r *Raft) processRPC(rpc RPC) {
 	case *TimeoutNowRequest:
 		r.timeoutNow(rpc, cmd)
 	default:
-		r.logger.Error("got unexpected command",
-			"command", hclog.Fmt("%#v", rpc.Command))
+		r.logger.Error("异常的命令类型", "command", hclog.Fmt("%#v", rpc.Command))
 		rpc.Respond(nil, fmt.Errorf("unexpected command"))
 	}
 }
@@ -1413,95 +1412,99 @@ func (r *Raft) processConfigurationLogEntry(entry *Log) error {
 func (r *Raft) requestVote(rpc RPC, req *RequestVoteRequest) {
 	r.observe(*req)
 
-	// Setup a response
+	// 构建响应
 	resp := &RequestVoteResponse{
 		RPCHeader: r.getRPCHeader(),
-		Term:      r.getCurrentTerm(),
-		Granted:   false,
+		Term:      r.getCurrentTerm(), // 当前的任期
+		Granted:   false,              // 不投票
 	}
 	var rpcErr error
 	defer func() {
 		rpc.Respond(resp, rpcErr)
 	}()
 
-	// Version 0 servers will panic unless the peers is present. It's only
-	// used on them to produce a warning message.
+	// Version 0 servers will panic unless the peers is present. It's only  used on them to produce a warning message.
+	// 版本0，服务器会panic，除非节点存在。它只用在他们身上，以产生一个警告信息。
 	if r.protocolVersion < 2 {
+		// 请求协议版本为0，1
+		// TODO 现在协议版本都设置为了3 ，不会走到这里
 		resp.Peers = encodePeers(r.configurations.latest, r.trans)
 	}
 
-	// Check if we have an existing leader [who's not the candidate] and also
-	// check the LeadershipTransfer flag is set. Usually votes are rejected if
-	// there is a known leader. But if the leader initiated a leadership transfer,
-	// vote!
-	candidate := r.trans.DecodePeer(req.Candidate)
+	candidate := r.trans.DecodePeer(req.Candidate) // 候选者地址
+	// 不是当前节点的leader，且没有发生领导者转移
 	if leader := r.Leader(); leader != "" && leader != candidate && !req.LeadershipTransfer {
-		r.logger.Warn("rejecting vote request since we have a leader",
-			"from", candidate,
-			"leader", leader)
+		r.logger.Warn("拒绝投票请求，因为我们有一个领导者", "from", candidate, "leader", leader)
 		return
 	}
 
-	// Ignore an older term
+	// 小于当前任期
 	if req.Term < r.getCurrentTerm() {
 		return
 	}
 
-	// Increase the term if we see a newer one
+	// 大于当前任期
 	if req.Term > r.getCurrentTerm() {
-		// Ensure transition to follower
-		r.logger.Debug("lost leadership because received a requestVote with a newer term")
+		// 确保过渡到追随者
+		r.logger.Debug("失去了领导权  因为收到了具有新任期的requestVote请求")
 		r.setState(Follower)
 		r.setCurrentTerm(req.Term)
 		resp.Term = req.Term
 	}
 
-	// Check if we have voted yet
-	lastVoteTerm, err := r.stable.GetUint64(keyLastVoteTerm)
-	if err != nil && err.Error() != "not found" {
-		r.logger.Error("failed to get last vote term", "error", err)
+	// 检查我们是否已经为自己投票  r.persistVote(req.Term, req.Candidate)
+	lastVoteTerm, err := r.stable.GetUint64(keyLastVoteTerm) // 最新的竞选任期
+	if err != nil && err != ErrKeyNotFound {
+		r.logger.Error("获取当前任期失败", "error", err)
 		return
 	}
-	lastVoteCandBytes, err := r.stable.Get(keyLastVoteCand)
-	if err != nil && err.Error() != "not found" {
-		r.logger.Error("failed to get last vote candidate", "error", err)
+	lastVoteCandBytes, err := r.stable.Get(keyLastVoteCand) // 本机地址
+	if err != nil && err != ErrKeyNotFound {
+		r.logger.Error("获取最新的候选任期失败", "error", err)
 		return
 	}
 
-	// Check if we've voted in this election before
+	// 检查我们是否曾经在这次选举中投票
 	if lastVoteTerm == req.Term && lastVoteCandBytes != nil {
-		r.logger.Info("duplicate requestVote for same term", "term", req.Term)
+		r.logger.Info("对同一任期的重复请求投票", "term", req.Term)
+		// 如果已经任期相同，但不是之前存储的竞选者ID，不投票
+		// 1、集群之初，给A投票了，B请求来了,就不给B投票了   									不投票   ✅
+		// 2、集群重启，任期相同,lastVoteCandBytes 之前的leader== 现在的竞选者 ，				投票     ✅
+		// 3、集群重启，任期相同，请求来源不是之前的leader，需要判断 来源的任期、日志索引数
+		//	      请求任期 < 当期  														不投票   ✅
+		//	      请求任期 > 当期  														投票     ✅
+		//	      请求任期 = 当期  && 请求的日志索引 <  当前日志索引  						不投票   ✅
+		//	      请求任期 = 当期  && 请求的日志索引 >= 当前日志索引  						投票     ✅
+		//
 		if bytes.Compare(lastVoteCandBytes, req.Candidate) == 0 {
-			r.logger.Warn("duplicate requestVote from", "candidate", candidate)
+			// 同一任期、同一来源
+			r.logger.Warn("重复的候选者地址", "candidate", candidate)
 			resp.Granted = true
 		}
 		return
 	}
 
-	// Reject if their term is older
+	// 如果请求的任期小于当前的任期，则拒绝
 	lastIdx, lastTerm := r.getLastEntry()
 	if lastTerm > req.LastLogTerm {
-		r.logger.Warn("rejecting vote request since our last term is greater",
-			"candidate", candidate,
-			"last-term", lastTerm,
-			"last-candidate-term", req.LastLogTerm)
+		r.logger.Warn("拒绝投票请求，因为我们的本机任期更大",
+			"candidate", candidate, "本机任期", lastTerm, "投票申请的任期", req.LastLogTerm)
 		return
 	}
 
 	if lastTerm == req.LastLogTerm && lastIdx > req.LastLogIndex {
-		r.logger.Warn("rejecting vote request since our last index is greater",
-			"candidate", candidate,
-			"last-index", lastIdx,
-			"last-candidate-index", req.LastLogIndex)
+		r.logger.Warn("拒绝投票请求，因为我们的本机索引更大",
+			"candidate", candidate, "本机日志索引", lastIdx, "投票申请的日志索引", req.LastLogIndex)
 		return
 	}
 
-	// Persist a vote for safety
+	// 安全存储任期, 如果是集群运行之初,都相等,这里就会设置第一个到达的任期、竞选者ID
 	if err := r.persistVote(req.Term, req.Candidate); err != nil {
-		r.logger.Error("failed to persist vote", "error", err)
+		r.logger.Error("存储任期失败", "error", err)
 		return
 	}
-
+	// 如果不断的都可以走到这，那就疯了
+	// 这里没有进行限制，都投票了  例如term、index 都一样的情况
 	resp.Granted = true
 	r.setLastContact()
 	return
@@ -1681,7 +1684,8 @@ func (r *Raft) electSelf() <-chan *voteResult {
 				resp.Term = req.Term
 				resp.Granted = false
 			}
-			respCh <- resp
+			//	 raft/raft.go:1411
+			respCh <- resp // 可以获取到远端节点的任期
 		})
 	}
 

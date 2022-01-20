@@ -67,7 +67,7 @@ type NetworkTransport struct {
 	connPool     map[ServerAddress][]*netConn
 	connPoolLock sync.Mutex
 
-	consumeCh chan RPC
+	consumeCh chan RPC // rpc请求消息
 
 	heartbeatFn     func(RPC)
 	heartbeatFnLock sync.Mutex
@@ -162,7 +162,7 @@ func NewNetworkTransportWithConfig(config *NetworkTransportConfig) *NetworkTrans
 	}
 	trans := &NetworkTransport{
 		connPool:              make(map[ServerAddress][]*netConn), // string= []*netConn{}
-		consumeCh:             make(chan RPC), // 阻塞式传递
+		consumeCh:             make(chan RPC),                     // 阻塞式传递
 		logger:                config.Logger,
 		maxPool:               config.MaxPool,
 		shutdownCh:            make(chan struct{}),
@@ -541,7 +541,7 @@ func (n *NetworkTransport) handleCommand(r *bufio.Reader, dec *codec.Decoder, en
 	// 解析命令
 	isHeartbeat := false
 	switch rpcType {
-	case rpcAppendEntries:// 日志追加
+	case rpcAppendEntries: // 日志追加
 		var req AppendEntriesRequest
 		if err := dec.Decode(&req); err != nil {
 			return err
@@ -555,7 +555,7 @@ func (n *NetworkTransport) handleCommand(r *bufio.Reader, dec *codec.Decoder, en
 			isHeartbeat = true
 		}
 
-	case rpcRequestVote:// 申请投票请求
+	case rpcRequestVote: // 申请投票请求
 		var req RequestVoteRequest
 		if err := dec.Decode(&req); err != nil {
 			return err

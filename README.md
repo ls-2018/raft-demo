@@ -122,3 +122,41 @@ key: 97,value :&{Index:97 Term:2 Type:LogCommand Data:[115 101 116 44 97 43 57 5
 key: 98,value :&{Index:98 Term:2 Type:LogCommand Data:[115 101 116 44 97 43 57 53 44 57 53] Extensions:[] AppendedAt:2022-01-20 11:02:36.471694 +0800 CST m=+8.876595735}
 key: 99,value :&{Index:99 Term:2 Type:LogCommand Data:[115 101 116 44 97 43 57 54 44 57 54] Extensions:[] AppendedAt:2022-01-20 11:02:36.510897 +0800 CST m=+8.915797453}
 ```
+
+
+### rpcType
+```azure
+rpcAppendEntries
+rpcRequestVote
+rpcInstallSnapshot
+rpcTimeoutNow
+```
+
+### Command Type
+```
+AppendEntriesRequest
+RequestVoteRequest
+InstallSnapshotRequest
+TimeoutNowRequest
+```
+
+
+
+### 竞选流程
+- con 对每一个启动时制定好的节点进行rpc调用
+```azure
+req := &RequestVoteRequest{
+		RPCHeader:          r.getRPCHeader(),   // 只有协议版本
+		Term:               r.getCurrentTerm(), // 当前任期
+		Candidate:          r.trans.EncodePeer(r.localID, r.localAddr), // 竞选者，其实就是localAddr
+		LastLogIndex:       lastIdx,// 最新的日志索引
+		LastLogTerm:        lastTerm,// 当前的任期
+		LeadershipTransfer: r.candidateFromLeadershipTransfer, // 在这为false
+}
+RequestVote(本机的逻辑ID, 本机的通信地址, req, &resp.RequestVoteResponse)
+```
+- 远端接收rpc调用
+  - handleCommand
+  - processRPC
+  - requestVote
+  - 

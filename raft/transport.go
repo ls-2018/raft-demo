@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// RPCResponse captures both a response and a potential error.
+// RPCResponse 捕捉到了一个响应和一个错误。
 type RPCResponse struct {
 	Response interface{}
 	Error    error

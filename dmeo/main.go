@@ -7,30 +7,29 @@ import (
 	"github.com/boltdb/bolt"
 	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/go-msgpack/codec"
-	"hash/crc64"
 	"os"
 	"time"
 )
 
 var dbConf = []byte("MyBucket")
 
-func main() {
-	fmt.Println(crc64.New(crc64.MakeTable(crc64.ECMA)).Sum64())
-	fmt.Println(crc64.New(crc64.MakeTable(crc64.ECMA)).Sum64())
-	a := []uint8{
-		147,
-		145,
-		89,
-		106,
-		117,
-		222,
-		213,
-		93,
-	}
-	fmt.Println(string(a))
-	e()
-}
 func mai2n() {
+	//fmt.Println(crc64.New(crc64.MakeTable(crc64.ECMA)).Sum64())
+	//fmt.Println(crc64.New(crc64.MakeTable(crc64.ECMA)).Sum64())
+	//a := []uint8{
+	//	147,
+	//	145,
+	//	89,
+	//	106,
+	//	117,
+	//	222,
+	//	213,
+	//	93,
+	//}
+	//fmt.Println(string(a))
+	//e()
+}
+func main() {
 	logger := hclog.New(&hclog.LoggerOptions{
 		Name:   "raft-net",
 		Output: os.Stdout,
@@ -41,21 +40,25 @@ func mai2n() {
 	db, _ := bolt.Open("./node/my.db", 0600, &bolt.Options{Timeout: 1 * time.Second})
 	defer db.Close()
 	logger.Info("", d(db))
-	tx, _ := db.Begin(true)
-	bucket := tx.Bucket(dbConf)
-	if err := bucket.Put([]byte("a"), []byte("ab1")); err != nil {
-	}
-	if err := bucket.Put([]byte("a"), []byte("ab5")); err != nil {
-	}
-	tx.Commit()
-
-	tx, _ = db.Begin(true)
-	bucket = tx.Bucket(dbConf)
-	fmt.Println(string(bucket.Get([]byte("a"))))
-	tx.Rollback()
-
+	val := get(db)
+	fmt.Println(bytesToUint64(val))
 	//currentTerm, err := db.GetUint64(keyCurrentTerm)
 	//fmt.Println(f(db))
+}
+func get(db *bolt.DB) []byte {
+	tx, _ := db.Begin(true)
+	bucket := tx.Bucket(dbConf)
+	//if err := bucket.Put([]byte("a"), []byte("ab1")); err != nil {
+	//}
+	//if err := bucket.Put([]byte("a"), []byte("ab5")); err != nil {
+	//}
+
+	bucket = tx.Bucket(dbConf)
+
+	defer tx.Rollback()
+	res := bucket.Get([]byte("a"))
+	//tx.Commit()
+	return res
 }
 
 func d(db *bolt.DB) error {
@@ -96,6 +99,7 @@ func f(db *bolt.DB) (uint64, error) {
 
 // 将数据转换成uint64值
 func bytesToUint64(b []byte) uint64 {
+	//如果 b 为nil 会panic
 	return binary.BigEndian.Uint64(b)
 }
 
