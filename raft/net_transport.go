@@ -16,9 +16,9 @@ import (
 )
 
 const (
-	rpcAppendEntries uint8 = iota
-	rpcRequestVote
-	rpcInstallSnapshot
+	rpcAppendEntries   uint8 = iota // 日志追加
+	rpcRequestVote                  // 请求投票
+	rpcInstallSnapshot              // 打快照
 	rpcTimeoutNow
 
 	// DefaultTimeoutScale is the default TimeoutScale in a NetworkTransport.
@@ -28,8 +28,7 @@ const (
 	// AppendEntries RPC calls.
 	rpcMaxPipeline = 128
 
-	// connReceiveBufferSize is the size of the buffer we will use for reading RPC requests into
-	// on followers
+	// connReceiveBufferSize 是我们将用于接收RPC请求数据的缓冲区的大小， ->flower。
 	connReceiveBufferSize = 256 * 1024 // 256KB
 
 	// connSendBufferSize 是我们将用于发送RPC请求数据的缓冲区的大小，从leader到flower。
@@ -94,6 +93,7 @@ type NetworkTransport struct {
 	TimeoutScale int
 }
 
+var _ Transport = &NetworkTransport{} // 既可以发送命令、也可以接收命令
 // NetworkTransportConfig 封装了网络传输层的配置。
 type NetworkTransportConfig struct {
 	// ServerAddressProvider 用于在建立连接以调用RPC时覆盖目标地址。
@@ -162,7 +162,7 @@ func NewNetworkTransportWithConfig(config *NetworkTransportConfig) *NetworkTrans
 	}
 	trans := &NetworkTransport{
 		connPool:              make(map[ServerAddress][]*netConn), // string= []*netConn{}
-		consumeCh:             make(chan RPC),
+		consumeCh:             make(chan RPC), // 阻塞式传递
 		logger:                config.Logger,
 		maxPool:               config.MaxPool,
 		shutdownCh:            make(chan struct{}),
@@ -257,7 +257,7 @@ func (n *NetworkTransport) Close() error {
 	return nil
 }
 
-// Consumer implements the Transport interface.
+// Consumer 获取可以消费的命令事件
 func (n *NetworkTransport) Consumer() <-chan RPC {
 	return n.consumeCh
 }
@@ -451,14 +451,14 @@ func (n *NetworkTransport) TimeoutNow(id ServerID, target ServerAddress, args *T
 	return n.genericRPC(id, target, rpcTimeoutNow, args, resp)
 }
 
-// listen is used to handling incoming connections.
+// listen 是用来处理传入的连接。
 func (n *NetworkTransport) listen() {
 	const baseDelay = 5 * time.Millisecond
 	const maxDelay = 1 * time.Second
 
 	var loopDelay time.Duration
 	for {
-		// Accept incoming connections
+		// 处理到来的链接
 		conn, err := n.stream.Accept()
 		if err != nil {
 			if loopDelay == 0 {
@@ -482,22 +482,20 @@ func (n *NetworkTransport) listen() {
 				continue
 			}
 		}
-		// No error, reset loop delay
+		// 无错误，重置循环延迟
 		loopDelay = 0
 
-		n.logger.Debug("accepted connection", "local-address", n.LocalAddr(), "remote-address", conn.RemoteAddr().String())
+		n.logger.Debug("接收链接", "local-address", n.LocalAddr(), "remote-address", conn.RemoteAddr().String())
 
-		// Handle the connection in dedicated routine
+		// 在单独的go routine中处理连接
 		go n.handleConn(n.getStreamContext(), conn)
 	}
 }
 
-// handleConn is used to handle an inbound connection for its lifespan. The
-// handler will exit when the passed context is cancelled or the connection is
-// closed.
+// handleConn 处理入栈请求,
 func (n *NetworkTransport) handleConn(connCtx context.Context, conn net.Conn) {
 	defer conn.Close()
-	r := bufio.NewReaderSize(conn, connReceiveBufferSize)
+	r := bufio.NewReaderSize(conn, connReceiveBufferSize) // 256Kb
 	w := bufio.NewWriter(conn)
 	dec := codec.NewDecoder(r, &codec.MsgpackHandle{})
 	enc := codec.NewEncoder(w, &codec.MsgpackHandle{})
@@ -505,29 +503,28 @@ func (n *NetworkTransport) handleConn(connCtx context.Context, conn net.Conn) {
 	for {
 		select {
 		case <-connCtx.Done():
-			n.logger.Debug("stream layer is closed")
+			n.logger.Debug("传输层已关闭")
 			return
 		default:
 		}
 
 		if err := n.handleCommand(r, dec, enc); err != nil {
 			if err != io.EOF {
-				n.logger.Error("failed to decode incoming command", "error", err)
+				n.logger.Error("解码传输到来的命令失败", "error", err)
 			}
 			return
 		}
 		if err := w.Flush(); err != nil {
-			n.logger.Error("failed to flush response", "error", err)
+			n.logger.Error("刷盘 res 失败", "error", err)
 			return
 		}
 	}
 }
 
-// handleCommand is used to decode and dispatch a single command.
+// handleCommand 解码、处理命令
 func (n *NetworkTransport) handleCommand(r *bufio.Reader, dec *codec.Decoder, enc *codec.Encoder) error {
 
-	// Get the rpc type
-	rpcType, err := r.ReadByte()
+	rpcType, err := r.ReadByte() // 读取一个字节
 	if err != nil {
 		return err
 	}
@@ -535,29 +532,30 @@ func (n *NetworkTransport) handleCommand(r *bufio.Reader, dec *codec.Decoder, en
 	// measuring the time to get the first byte separately because the heartbeat conn will hang out here
 	// for a good while waiting for a heartbeat whereas the append entries/rpc conn should not.
 	// Create the RPC object
+	// 分别测量获得第一个字节的时间，因为心跳CONN会在这里停留很长时间等待心跳，而追加日志/RPC CONN不会
 	respCh := make(chan RPCResponse, 1)
 	rpc := RPC{
 		RespChan: respCh,
 	}
 
-	// Decode the command
+	// 解析命令
 	isHeartbeat := false
 	switch rpcType {
-	case rpcAppendEntries:
+	case rpcAppendEntries:// 日志追加
 		var req AppendEntriesRequest
 		if err := dec.Decode(&req); err != nil {
 			return err
 		}
 		rpc.Command = &req
 
-		// Check if this is a heartbeat
+		// 检查这是否是心跳
 		if req.Term != 0 && req.Leader != nil &&
 			req.PrevLogEntry == 0 && req.PrevLogTerm == 0 &&
 			len(req.Entries) == 0 && req.LeaderCommitIndex == 0 {
 			isHeartbeat = true
 		}
 
-	case rpcRequestVote:
+	case rpcRequestVote:// 申请投票请求
 		var req RequestVoteRequest
 		if err := dec.Decode(&req); err != nil {
 			return err
@@ -577,10 +575,10 @@ func (n *NetworkTransport) handleCommand(r *bufio.Reader, dec *codec.Decoder, en
 		}
 		rpc.Command = &req
 	default:
-		return fmt.Errorf("unknown rpc type %d", rpcType)
+		return fmt.Errorf("未知的rpc类型 %d", rpcType)
 	}
 
-	// Check for heartbeat fast-path
+	// 检查心脏跳动的快速途径
 	if isHeartbeat {
 		n.heartbeatFnLock.Lock()
 		fn := n.heartbeatFn
@@ -591,19 +589,20 @@ func (n *NetworkTransport) handleCommand(r *bufio.Reader, dec *codec.Decoder, en
 		}
 	}
 
-	// Dispatch the RPC
+	// 分发rpc请求
 	select {
-	case n.consumeCh <- rpc:
+	case n.consumeCh <- rpc: // 保证只有一个命令在处理  size=0
 	case <-n.shutdownCh:
 		return ErrTransportShutdown
 	}
 
-	// Wait for response
+	// 等待响应
 RESP:
 	// we will differentiate the heartbeat fast path from normal RPCs with labels
+	// 我们将用标签来区分心跳和普通的RPC
 	select {
-	case resp := <-respCh:
-		// Send the error first
+	case resp := <-respCh: //  n.consumeCh <- rpc 放进去以后，要等代处理完成
+		// 会交给  r.runFollower \ r.runCandidate() \ r.runLeader() 来从consumeCh 读取,最终由r.processRPC(rpc) 处理
 		respErr := ""
 		if resp.Error != nil {
 			respErr = resp.Error.Error()
@@ -612,7 +611,7 @@ RESP:
 			return err
 		}
 
-		// Send the response
+		// 发送响应
 		if err := enc.Encode(resp.Response); err != nil {
 			return err
 		}

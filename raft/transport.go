@@ -11,10 +11,10 @@ type RPCResponse struct {
 	Error    error
 }
 
-// RPC has a command, and provides a response mechanism.
+// RPC 有一个命令，并提供一个响应机制。
 type RPC struct {
 	Command  interface{}
-	Reader   io.Reader // Set only for InstallSnapshot
+	Reader   io.Reader // 只有在 InstallSnapshot时设置
 	RespChan chan<- RPCResponse
 }
 

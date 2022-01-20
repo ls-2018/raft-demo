@@ -32,20 +32,17 @@ func (r *Raft) getRPCHeader() RPCHeader {
 	}
 }
 
-// checkRPCHeader houses logic about whether this instance of Raft can process
-// the given RPC message.
+// checkRPCHeader  raft处理rpc消息的主逻辑
 func (r *Raft) checkRPCHeader(rpc RPC) error {
-	// Get the header off the RPC message.
+	// 获取rpc消息的头信息
 	wh, ok := rpc.Command.(WithRPCHeader)
 	if !ok {
-		return fmt.Errorf("RPC does not have a header")
+		return fmt.Errorf("RPC没有头信息")
 	}
 	header := wh.GetRPCHeader()
 
-	// First check is to just make sure the code can understand the
-	// protocol at all.
-	if header.ProtocolVersion < ProtocolVersionMin ||
-		header.ProtocolVersion > ProtocolVersionMax {
+	// 首先检查协议版本
+	if header.ProtocolVersion < ProtocolVersionMin || header.ProtocolVersion > ProtocolVersionMax {
 		return ErrUnsupportedProtocol
 	}
 
@@ -290,27 +287,19 @@ func (r *Raft) runCandidate() {
 				r.setLeader(r.localAddr)
 				return
 			}
-
+		//-----------------------------------
+		// 拒绝任何操作，当不是leader
 		case c := <-r.configurationChangeCh:
-			// Reject any operations since we are not the leader
 			c.respond(ErrNotLeader)
-
 		case a := <-r.applyCh:
-			// Reject any operations since we are not the leader
 			a.respond(ErrNotLeader)
-
 		case v := <-r.verifyCh:
-			// Reject any operations since we are not the leader
 			v.respond(ErrNotLeader)
-
 		case r := <-r.userRestoreCh:
-			// Reject any restores since we are not the leader
 			r.respond(ErrNotLeader)
-
 		case r := <-r.leadershipTransferCh:
-			// Reject any operations since we are not the leader
 			r.respond(ErrNotLeader)
-
+		//-----------------------------------
 		case c := <-r.configurationsCh:
 			c.configurations = r.configurations.Clone()
 			c.respond(nil)
@@ -1214,8 +1203,7 @@ func (r *Raft) prepareLog(l *Log, future *logFuture) *commitTuple {
 	return nil
 }
 
-// processRPC is called to handle an incoming RPC request. This must only be
-// called from the main thread.
+// processRPC 处理rpc请求
 func (r *Raft) processRPC(rpc RPC) {
 	if err := r.checkRPCHeader(rpc); err != nil {
 		rpc.Respond(nil, err)
