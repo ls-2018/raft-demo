@@ -1,16 +1,9 @@
-另外一篇关于paxos协议的分享地址：https://github.com/vision9527/paxos
-
 ### 一、Raft协议简介
 
 * Raft 是一种为了管理复制日志的一致性协议
 
 * 复制状态机概念，复制状态机是指每个状态机或系统如果初始状态一致，然后接受的改变状态的命令也一致，最后产生的结果状态也是相同。
-
-* 中英文论文地址：https://github.com/maemual/raft-zh_cn
-
-* go夜读分享bilibili地址：https://www.bilibili.com/video/BV1tV411m7ir
-* go夜读分享youtube地址：https://www.youtube.com/watch?v=EjGNtHrq4UQ
-
+ 
 ### 二、Raft选举过程
 
 * 选举过程图1（单个节点视角）
