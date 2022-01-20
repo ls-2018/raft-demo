@@ -35,8 +35,6 @@ func (r *AppendEntriesRequest) GetRPCHeader() RPCHeader {
 	return r.RPCHeader
 }
 
-// AppendEntriesResponse is the response returned from an
-// AppendEntriesRequest.
 type AppendEntriesResponse struct {
 	RPCHeader
 
@@ -59,22 +57,19 @@ func (r *AppendEntriesResponse) GetRPCHeader() RPCHeader {
 	return r.RPCHeader
 }
 
-// RequestVoteRequest is the command used by a candidate to ask a Raft peer
-// for a vote in an election.
+// RequestVoteRequest 是候选人在选举中向raft中的节点请求投票的req。
 type RequestVoteRequest struct {
 	RPCHeader
 
-	// Provide the term and our id
-	Term      uint64
-	Candidate []byte
+	// 提供当前的任期、竞选者逻辑ID
+	Term      uint64 // 发送者的当前任期
+	Candidate []byte // localAddr
 
-	// Used to ensure safety
 	LastLogIndex uint64
 	LastLogTerm  uint64
 
-	// Used to indicate to peers if this vote was triggered by a leadership
-	// transfer. It is required for leadership transfer to work, because servers
-	// wouldn't vote otherwise if they are aware of an existing leader.
+	// 特权模式
+	// 如果是true ，在请求投票时，及时对方有leader ,也会走判断term、index的逻辑
 	LeadershipTransfer bool
 }
 

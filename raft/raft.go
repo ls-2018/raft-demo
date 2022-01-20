@@ -245,11 +245,10 @@ func (r *Raft) runCandidate() {
 	// 首先投自己一票，并设置选举超时
 	voteCh := r.electSelf()
 
-	// Make sure the leadership transfer flag is reset after each run. Having this
-	// flag will set the field LeadershipTransfer in a RequestVoteRequst to true,
-	// which will make other servers vote even though they have a leader already.
-	// It is important to reset that flag, because this priviledge could be abused
-	// otherwise.
+	// 确保每次运行后领导权转移flag被重置。
+	// 有这个flag, 将RequestVoteRequst中的LeadershipTransfer字段设置为 "true"，这将使其他服务器投票
+	// 即使他们已经有一个领导者。
+	// 重置这个标志很重要，因为这个特权可能会被滥用。
 	defer func() { r.candidateFromLeadershipTransfer = false }()
 
 	electionTimer := randomTimeout(r.config().ElectionTimeout)
@@ -1640,7 +1639,7 @@ func (r *Raft) installSnapshot(rpc RPC, req *InstallSnapshotRequest) {
 	return
 }
 
-// setLastContact 设置与 leader 心跳通信的时间
+// setLastContact 设置上一次与其他节点通信的时间
 func (r *Raft) setLastContact() {
 	r.lastContactLock.Lock()
 	r.lastContact = time.Now()
@@ -1665,9 +1664,9 @@ func (r *Raft) electSelf() <-chan *voteResult {
 	// 构建请求
 	lastIdx, lastTerm := r.getLastEntry()
 	req := &RequestVoteRequest{
-		RPCHeader:          r.getRPCHeader(),   // 只有协议版本
-		Term:               r.getCurrentTerm(), // 当前任期
-		Candidate:          r.trans.EncodePeer(r.localID, r.localAddr),
+		RPCHeader:          r.getRPCHeader(),                           // 只有协议版本
+		Term:               r.getCurrentTerm(),                         // 当前任期
+		Candidate:          r.trans.EncodePeer(r.localID, r.localAddr), // localAddr
 		LastLogIndex:       lastIdx,
 		LastLogTerm:        lastTerm,
 		LeadershipTransfer: r.candidateFromLeadershipTransfer, // 在这为false
