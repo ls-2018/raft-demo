@@ -20,7 +20,7 @@ type AppendEntriesRequest struct {
 	Leader []byte
 
 	// 从leader角度出发,从follower看,xx日志已写入leader，但是follower没有，xx对follower来说就是pre
-	PrevLogEntry uint64
+	PrevLogEntry uint64 // 同步过来的一批的日志的第一个日志索引
 	PrevLogTerm  uint64
 
 	// 新提交的日志条目
@@ -96,8 +96,6 @@ func (r *RequestVoteResponse) GetRPCHeader() RPCHeader {
 	return r.RPCHeader
 }
 
-// InstallSnapshotRequest is the command sent to a Raft peer to bootstrap its
-// log (and state machine) from a snapshot on another peer.
 type InstallSnapshotRequest struct {
 	RPCHeader
 	SnapshotVersion SnapshotVersion
@@ -105,21 +103,19 @@ type InstallSnapshotRequest struct {
 	Term   uint64
 	Leader []byte
 
-	// These are the last index/term included in the snapshot
+	// 快照的索引、任期
 	LastLogIndex uint64
 	LastLogTerm  uint64
 
-	// Peer Set in the snapshot. This is deprecated in favor of Configuration
-	// but remains here in case we receive an InstallSnapshot from a leader
-	// that's running old code.
+	//快照中包含的节点信息；这已被废弃，转而使用 "Configuration"，但仍保留在这里，以备我们从运行旧代码的领导者那里收到InstallSnapshot。
 	Peers []byte
 
-	// Cluster membership.
+	// 集群成员
 	Configuration []byte
-	// Log index where 'Configuration' entry was originally written.
+	// 最初写入'Configuration'条目的索引。
 	ConfigurationIndex uint64
 
-	// Size of the snapshot
+	// Size 快照大小
 	Size int64
 }
 

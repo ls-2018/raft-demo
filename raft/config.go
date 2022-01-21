@@ -8,68 +8,6 @@ import (
 	"github.com/hashicorp/go-hclog"
 )
 
-// ProtocolVersion
-// 是该服务器能够_理解的协议版本（包括RPC消息以及Raft特定的日志条目）。
-// 使用配置对象的ProtocolVersion成员来控制与其他服务器对话时要使用的协议版本。
-// 请注意，根据所使用的协议版本，一些本来可以理解的RPC消息 可能会被拒绝。
-// 关于这个逻辑的细节，请参见dispositionRPC。
-//
-// 在下面的版本描述中，有关于升级方式的说明。如果你正在启动一个新的集群，
-// 那么没有理由不直接跳到最新的协议版本。如果你需要与旧的、0版本的Raft服务器进行互操作，你将需要通过不同的版本依次驱动集群。
-//
-// 版本的细节很复杂，但这里总结了从0版本的集群到3版本所需的内容。
-// 1. 在你的应用程序的N个版本中，开始使用新的Raft库，并采用版本管理，将ProtocolVersion设置为1。
-// 2. 使你的应用程序的N+1版本需要N版本作为先决条件（所有服务器必须升级）。对于你的应用程序的N+1版本，将ProtocolVersion设置为2。
-// 3. 同样，使你的应用程序的N+2版本需要N+1版本作为先决条件。对于你的应用程序的N+2版本，将ProtocolVersion设置为3。
-//
-// 在这个升级过程中，老的集群成员仍然会有等于其网络地址的服务器ID。要升级一个老成员并给它一个ID，它需要离开集群并重新进入。
-//
-// 1. 使用RemoveServer将服务器从集群中移除，使用其网络地址作为其ServerID。
-// 2. 更新服务器的配置，使用UUID或其他不与机器绑定的东西作为ServerID（重启服务器）。
-// 3. 用AddVoter将服务器添加回集群，使用它的新ID。
-//
-// 你可以在你的应用程序从N+1到N+2的滚动升级过程中这样做，也可以在升级后的任何时候作为一个滚动变化。
-//
-// Version History
-//
-// 0: Original Raft library before versioning was added. Servers running this
-//    version of the Raft library use AddPeerDeprecated/RemovePeerDeprecated
-//    for all configuration changes, and have no support for LogConfiguration.
-// 1: First versioned protocol, used to interoperate with old servers, and begin
-//    the migration path to newer versions of the protocol. Under this version
-//    all configuration changes are propagated using the now-deprecated
-//    RemovePeerDeprecated Raft log entry. This means that server IDs are always
-//    set to be the same as the server addresses (since the old log entry type
-//    cannot transmit an ID), and only AddPeer/RemovePeer APIs are supported.
-//    Servers running this version of the protocol can understand the new
-//    LogConfiguration Raft log entry but will never generate one so they can
-//    remain compatible with version 0 Raft servers in the cluster.
-// 2: Transitional protocol used when migrating an existing cluster to the new
-//    server ID system. Server IDs are still set to be the same as server
-//    addresses, but all configuration changes are propagated using the new
-//    LogConfiguration Raft log entry type, which can carry full ID information.
-//    This version supports the old AddPeer/RemovePeer APIs as well as the new
-//    ID-based AddVoter/RemoveServer APIs which should be used when adding
-//    version 3 servers to the cluster later. This version sheds all
-//    interoperability with version 0 servers, but can interoperate with newer
-//    Raft servers running with protocol version 1 since they can understand the
-//    new LogConfiguration Raft log entry, and this version can still understand
-//    their RemovePeerDeprecated Raft log entries. We need this protocol version
-//    as an intermediate step between 1 and 3 so that servers will propagate the
-//    ID information that will come from newly-added (or -rolled) servers using
-//    protocol version 3, but since they are still using their address-based IDs
-//    from the previous step they will still be able to track commitments and
-//    their own voting status properly. If we skipped this step, servers would
-//    be started with their new IDs, but they wouldn't see themselves in the old
-//    address-based configuration, so none of the servers would think they had a
-//    vote.
-// 3: Protocol adding full support for server IDs and new ID-based server APIs
-//    (AddVoter, AddNonvoter, etc.), old AddPeer/RemovePeer APIs are no longer
-//    supported. Version 2 servers should be swapped out by removing them from
-//    the cluster one-by-one and re-adding them with updated configuration for
-//    this protocol version, along with their server ID. The remove/add cycle
-//    is required to populate their server ID. Note that removing must be done
-//    by ID, which will be the old server's address.
 type ProtocolVersion int
 
 const (
@@ -79,23 +17,6 @@ const (
 	ProtocolVersionMax = 3
 )
 
-// SnapshotVersion is the version of snapshots that this server can understand.
-// Currently, it is always assumed that the server generates the latest version,
-// though this may be changed in the future to include a configurable version.
-//
-// Version History
-//
-// 0: Original Raft library before versioning was added. The peers portion of
-//    these snapshots is encoded in the legacy format which requires decodePeers
-//    to parse. This version of snapshots should only be produced by the
-//    unversioned Raft library.
-// 1: New format which adds support for a full configuration structure and its
-//    associated log index, with support for server IDs and non-voting server
-//    modes. To ease upgrades, this also includes the legacy peers structure but
-//    that will never be used by servers that understand version 1 snapshots.
-//    Since the original Raft library didn't enforce any versioning, we must
-//    include the legacy peers structure for this version, but we can deprecate
-//    it in the next snapshot version.
 type SnapshotVersion int
 
 const (

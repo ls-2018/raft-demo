@@ -5,8 +5,7 @@ import (
 	"io"
 )
 
-// FSM provides an interface that can be implemented by
-// clients to make use of the replicated log.
+// FSM 客户端应该实现这个接口
 type FSM interface {
 	// Apply
 	//如果Raft.Apply方法在与FSM相同的Raft节点上被调用，则该方法将在ApplyFuture中使用。
@@ -20,35 +19,17 @@ type FSM interface {
 	Restore(io.ReadCloser) error
 }
 
-// BatchingFSM extends the FSM interface to add an ApplyBatch function. This can
-// optionally be implemented by clients to enable multiple logs to be applied to
-// the FSM in batches. Up to MaxAppendEntries could be sent in a batch.
+// BatchingFSM  允许客户端批量提交数据 ,一个批次最多MaxAppendEntries
 type BatchingFSM interface {
-	// ApplyBatch is invoked once a batch of log entries has been committed and
-	// are ready to be applied to the FSM. ApplyBatch will take in an array of
-	// log entries. These log entries will be in the order they were committed,
-	// will not have gaps, and could be of a few log types. Clients should check
-	// the log type prior to attempting to decode the data attached. Presently
-	// the LogCommand and LogConfiguration types will be sent.
-	//
-	// The returned slice must be the same length as the input and each response
-	// should correlate to the log at the same index of the input. The returned
-	// values will be made available in the ApplyFuture returned by Raft.Apply
-	// method if that method was called on the same Raft node as the FSM.
 	ApplyBatch([]*Log) []interface{}
-
 	FSM
 }
 
-// FSMSnapshot is returned by an FSM in response to a Snapshot
-// It must be safe to invoke FSMSnapshot methods with concurrent
-// calls to Apply.
+// FSMSnapshot 快照接口，需实现
 type FSMSnapshot interface {
-	// Persist should dump all necessary state to the WriteCloser 'sink',
-	// and call sink.Close() when finished or call sink.Cancel() on error.
-	Persist(sink SnapshotSink) error
+	Persist(sink SnapshotSink) error // 打快照
 
-	// Release 是在我们完成快照后调用的。
+	// Release 是在我们完成快照后调用的。// 回调函数
 	Release()
 }
 
@@ -58,14 +39,11 @@ func (r *Raft) runFSM() {
 	var lastIndex, lastTerm uint64
 
 	batchingFSM, batchingEnabled := r.fsm.(BatchingFSM)
-	configStore, configStoreEnabled := r.fsm.(ConfigurationStore)
 
 	commitSingle := func(req *commitTuple) {
-		// Apply the log if a command or config change
+		// 如果一个命令或配置发生变化，应用日志
 		var resp interface{}
-		// Make sure we send a response
 		defer func() {
-			// Invoke the future if given
 			if req.future != nil {
 				req.future.response = resp
 				req.future.respond(nil)
@@ -77,13 +55,7 @@ func (r *Raft) runFSM() {
 			resp = r.fsm.Apply(req.log)
 
 		case LogConfiguration:
-			if !configStoreEnabled {
-				// Return early to avoid incrementing the index and term for
-				// an unimplemented operation.
-				return
-			}
-
-			configStore.StoreConfiguration(req.log.Index, DecodeConfiguration(req.log.Data))
+			return
 		}
 
 		// Update the indexes
@@ -192,19 +164,19 @@ func (r *Raft) runFSM() {
 		case ptr := <-r.fsmMutateCh:
 			switch req := ptr.(type) {
 			case []*commitTuple:
+				// 在应用日志时，它接收指向commitTuple结构的指针;
 				commitBatch(req)
-
 			case *restoreFuture:
+				// 在恢复快照时接收指向restoreFuture结构的指针。
 				restore(req)
-
 			default:
-				panic(fmt.Errorf("bad type passed to fsmMutateCh: %#v", ptr))
+				panic(fmt.Errorf("错误的类型传递 fsmMutateCh: %#v", ptr))
 			}
 
-		case req := <-r.fsmSnapshotCh:
+		case req := <-r.fsmSnapshotCh: // 快照信号
 			snapshot(req)
 
-		case <-r.shutdownCh:
+		case <-r.shutdownCh: // raft停止
 			return
 		}
 	}

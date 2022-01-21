@@ -85,21 +85,26 @@ func (r *Raft) appendEntries(rpc RPC, a *AppendEntriesRequest) {
 	// 设置当前节点的leader
 	r.setLeader(r.trans.DecodePeer(a.Leader))
 
-	// 验证最新的日志
+	// 验证最新的日志  同步过来的一批的日志的第一个日志索引
 	if a.PrevLogEntry > 0 {
 		lastIdx, lastTerm := r.getLastEntry() // 获取follower最新的日志索引、任期
 
-		var prevLogTerm uint64
+		var prevLogTerm uint64 // follower 的任期
 		if a.PrevLogEntry == lastIdx {
 			prevLogTerm = lastTerm // 日志索引一样、任期应该一致
 			//	 TODO 一会儿找不一致的情况，😁    ？？不同集群的节点，
 		} else {
+			fmt.Println(a.PrevLogEntry, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", lastIdx)
+			// 分两种
+			// PrevLogEntry < lastIdx   可以查找，不会报错
+			// PrevLogEntry > lastIdx	查不到，会报错
 			var prevLog Log
 			if err := r.logs.GetLog(a.PrevLogEntry, &prevLog); err != nil {
 				r.logger.Warn("获取最新日志失败", "请求的索引", a.PrevLogEntry, "最新的索引", lastIdx, "error", err)
 				resp.NoRetryBackoff = true
 				return
 			}
+			// 走到这，就是可以找到
 			prevLogTerm = prevLog.Term
 		}
 
@@ -310,10 +315,7 @@ func (r *Raft) requestVote(rpc RPC, req *RequestVoteRequest) {
 	return
 }
 
-// installSnapshot is invoked when we get a InstallSnapshot RPC call.
-// We must be in the follower state for this, since it means we are
-// too far behind a leader for log replay. This must only be called
-// from the main thread.
+// installSnapshot Follower状态下，日志落后leader太多
 func (r *Raft) installSnapshot(rpc RPC, req *InstallSnapshotRequest) {
 	// Setup a response
 	resp := &InstallSnapshotResponse{

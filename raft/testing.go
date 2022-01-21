@@ -42,11 +42,6 @@ type MockFSM struct {
 	configurations []Configuration
 }
 
-// MockFSMConfigStore NOTE: 这是为中间件测试目的而公开的，不是一个稳定的API。
-type MockFSMConfigStore struct {
-	FSM
-}
-
 // WrappingFSM NOTE: 这是为中间件测试目的而公开的，不是一个稳定的API。
 type WrappingFSM interface {
 	Underlying() FSM
@@ -56,8 +51,6 @@ func getMockFSM(fsm FSM) *MockFSM {
 	switch f := fsm.(type) {
 	case *MockFSM:
 		return f
-	case *MockFSMConfigStore:
-		return f.FSM.(*MockFSM)
 	case WrappingFSM:
 		return getMockFSM(f.Underlying())
 	}
@@ -70,8 +63,6 @@ type MockSnapshot struct {
 	logs     [][]byte
 	maxIndex int
 }
-
-var _ ConfigurationStore = (*MockFSMConfigStore)(nil)
 
 // Apply NOTE: 这是为中间件测试目的而公开的，不是一个稳定的API。
 func (m *MockFSM) Apply(log *Log) interface{} {
@@ -105,14 +96,6 @@ func (m *MockFSM) Logs() [][]byte {
 	m.Lock()
 	defer m.Unlock()
 	return m.logs
-}
-
-// StoreConfiguration NOTE: 这是为中间件测试目的而公开的，不是一个稳定的API。
-func (m *MockFSMConfigStore) StoreConfiguration(index uint64, config Configuration) {
-	mm := m.FSM.(*MockFSM)
-	mm.Lock()
-	defer mm.Unlock()
-	mm.configurations = append(mm.configurations, config)
 }
 
 // Persist NOTE: 这是为中间件测试目的而公开的，不是一个稳定的API。
@@ -699,11 +682,7 @@ func makeCluster(t *testing.T, opts *MakeClusterOpts) *cluster {
 		store := NewInmemStore()
 		c.dirs = append(c.dirs, dir)
 		c.stores = append(c.stores, store)
-		if opts.ConfigStoreFSM {
-			c.fsms = append(c.fsms, &MockFSMConfigStore{
-				FSM: &MockFSM{},
-			})
-		} else {
+		if !opts.ConfigStoreFSM {
 			var fsm FSM
 			if opts.MakeFSMFunc != nil {
 				fsm = opts.MakeFSMFunc()

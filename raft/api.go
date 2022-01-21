@@ -85,7 +85,8 @@ type Raft struct {
 	fsm FSM
 
 	// fsmMutateCh 用来向FSM发送状态变化的更新。
-	// 在应用日志时，它接收指向commitTuple结构的指针;在恢复快照时接收指向restoreFuture结构的指针。
+	// 在应用日志时，它接收指向commitTuple结构的指针;
+	// 在恢复快照时接收指向restoreFuture结构的指针。
 	fsmMutateCh chan interface{}
 
 	// fsmSnapshotCh 用来触发新的快照拍摄。
@@ -746,9 +747,7 @@ func (r *Raft) Barrier(timeout time.Duration) Future {
 	}
 }
 
-// VerifyLeader is used to ensure the current node is still
-// the leader. This can be done to prevent stale reads when a
-// new leader has potentially been elected.
+// VerifyLeader  是用来确保当前节点仍然是领导者。
 func (r *Raft) VerifyLeader() Future {
 	verifyFuture := &verifyFuture{}
 	verifyFuture.init()
@@ -890,9 +889,7 @@ func (r *Raft) Shutdown() Future {
 	return &shutdownFuture{nil}
 }
 
-// Snapshot is used to manually force Raft to take a snapshot. Returns a future
-// that can be used to block until complete, and that contains a function that
-// can be used to open the snapshot.
+// Snapshot 是用来手动强制Raft进行快照的。返回一个可以用来阻断直到完成的SnapshotFuture，并且包含一个可以用来打开快照的函数。
 func (r *Raft) Snapshot() SnapshotFuture {
 	future := &userSnapshotFuture{}
 	future.init()

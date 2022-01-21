@@ -427,6 +427,9 @@ func (r *Raft) dispatchLogs(applyLogs []*logFuture) {
 // pass futures=nil.
 // Leaders call this when entries are committed. They pass the futures from any
 // inflight logs.
+//是用来应用所有尚未应用到给定索引限制的已承诺条目。领导者和追随者都可以调用这个功能。
+//跟随者从AppendEntries中调用这个，每次调用n个条目，并且总是传递futures=nil。
+//领导者在条目被提交时调用此功能。他们从任何飞行日志中传递期货。
 func (r *Raft) processLogs(index uint64, futures map[uint64]*logFuture) {
 	// Reject logs we've applied already
 	lastApplied := r.getLastApplied()

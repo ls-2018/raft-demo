@@ -27,7 +27,7 @@ type followerReplication struct {
 	// currentTerm leader当前的任期
 	currentTerm uint64
 	// nextIndex 下一条要发送给follower的日志
-	nextIndex uint64
+	nextIndex uint64 // 选主以后，从leader开始时的的下一条日志开始复制
 
 	// peer 包含远程follower的网络地址和ID。
 	peer     Server
@@ -68,14 +68,15 @@ type followerReplication struct {
 
 // notifyAll is used to notify all the waiting verify futures
 // if the follower believes we are still the leader.
+// 是用来通知所有等待中的verifyFuture。如果追随者认为我们仍然是领导者。
 func (s *followerReplication) notifyAll(leader bool) {
-	// Clear the waiting notifies minimizing lock time
+	// 清除等待通知，尽量减少锁定时间
 	s.notifyLock.Lock()
 	n := s.notify
 	s.notify = make(map[*verifyFuture]struct{})
 	s.notifyLock.Unlock()
 
-	// Submit our votes
+	// 确认我们的选举权
 	for v := range n {
 		v.vote(leader)
 	}
@@ -130,6 +131,7 @@ RPC:
 				deferErr.respond(fmt.Errorf("replication failed"))
 			}
 		case <-s.triggerCh: // 有新的日志产生
+			// 获取当前日志库的最新索引
 			lastLogIdx, _ := r.getLastLog() // 之前存储了一条Type:LogConfiguration数据  ----> 1
 			shouldStop = r.replicateTo(s, lastLogIdx)
 
@@ -166,7 +168,7 @@ PIPELINE:
 	goto RPC
 }
 
-// replicateTo   用于更新follower副本的日志索引
+// replicateTo 复制到最新的索引；   用于更新follower副本的日志索引
 func (r *Raft) replicateTo(s *followerReplication, lastIndex uint64) (shouldStop bool) {
 	var req AppendEntriesRequest
 	var resp AppendEntriesResponse
@@ -186,6 +188,10 @@ START:
 	s.peerLock.RUnlock()
 
 	// 填充req需要携带的内容
+	//  一下子 产生了太多的日志，生成了新的快照，旧的索引A被干掉，现在最早的索引是B
+	// s.nextIndex 还是启动时的索引，A
+	// 那么在查找A---> B的日志的时候，就会报 ErrLogNotFound
+	// TODO 什么时候打的快照呢？还有什么其他情况
 	if err := r.setupAppendEntries(s, &req, atomic.LoadUint64(&s.nextIndex), lastIndex); err == ErrLogNotFound {
 		goto SendSnap
 	} else if err != nil {
@@ -194,11 +200,13 @@ START:
 	}
 	// 发起请求调用
 	if err := r.trans.AppendEntries(peer.ID, peer.Address, &req, &resp); err != nil {
+		// 失败的情况,
+		// Follower 数据落后于本节点
 		r.logger.Error("appendEntries失败", "peer", peer, "error", err)
 		s.failures++
 		return
 	}
-	// Check for a newer term, stop running
+	// 开始新的任期，停止运行
 	if resp.Term > req.Term {
 		r.handleStaleTerm(s)
 		return true
@@ -207,12 +215,10 @@ START:
 	// 更新与follower的通信时间
 	s.setLastContact()
 
-	// Update s based on success
 	if resp.Success {
-		// Update our replication state
+		// 更新副本状态
 		updateLastAppended(s, &req)
-
-		// Clear any failures, allow pipelining
+		// 清理失败计数、允许管道传输
 		s.failures = 0
 		s.allowPipeline = true
 	} else {
@@ -558,24 +564,22 @@ func (r *Raft) setNewLogs(req *AppendEntriesRequest, nextIndex, lastIndex uint64
 	return nil
 }
 
-// handleStaleTerm is used when a follower indicates that we have a stale term.
+// handleStaleTerm  当follower的任期大于当前leader节点的任期
 func (r *Raft) handleStaleTerm(s *followerReplication) {
-	r.logger.Error("peer has newer term, stopping replication", "peer", s.peer)
-	s.notifyAll(false) // No longer leader
+	r.logger.Error("对端有一个新的任期，停止复制", "peer", s.peer)
+	s.notifyAll(false) // 不再是leader
 	asyncNotifyCh(s.stepDown)
 }
 
-// updateLastAppended is used to update follower replication state after a
-// successful AppendEntries RPC.
-// TODO: This isn't used during InstallSnapshot, but the code there is similar.
+// updateLastAppended 用于在 AppendEntries RPC 成功后更新跟随者的复制状态。
 func updateLastAppended(s *followerReplication, req *AppendEntriesRequest) {
 	// Mark any inflight logs as committed
+	// 将任何机上记录标记为已提交
 	if logs := req.Entries; len(logs) > 0 {
 		last := logs[len(logs)-1]
 		atomic.StoreUint64(&s.nextIndex, last.Index+1)
 		s.commitment.match(s.peer.ID, last.Index)
 	}
-
-	// Notify still leader
+	// 通知所有Future，依然是leader
 	s.notifyAll(true)
 }

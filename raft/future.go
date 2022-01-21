@@ -172,18 +172,15 @@ func (s *shutdownFuture) Error() error {
 	return nil
 }
 
-// userSnapshotFuture is used for waiting on a user-triggered snapshot to
-// complete.
+// userSnapshotFuture
 type userSnapshotFuture struct {
 	deferError
 
-	// opener is a function used to open the snapshot. This is filled in
-	// once the future returns with no error.
+	// opener 提供了一个用来打开指定快照的函数
 	opener func() (*SnapshotMeta, io.ReadCloser, error)
 }
 
-// Open is a function you can call to access the underlying snapshot and its
-// metadata.
+// Open 提供了一个用来打开指定快照的函数
 func (u *userSnapshotFuture) Open() (*SnapshotMeta, io.ReadCloser, error) {
 	if u.opener == nil {
 		return nil, nil, fmt.Errorf("no snapshot available")
@@ -261,13 +258,12 @@ func (c *configurationsFuture) Index() uint64 {
 	return c.configurations.latestIndex
 }
 
-// vote is used to respond to a verifyFuture.
-// This may block when responding on the notifyCh.
+// vote 设置响应, 是不是leader
 func (v *verifyFuture) vote(leader bool) {
 	v.voteLock.Lock()
 	defer v.voteLock.Unlock()
 
-	// Guard against having notified already
+	// 避免已经通知
 	if v.notifyCh == nil {
 		return
 	}

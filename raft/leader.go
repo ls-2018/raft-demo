@@ -104,8 +104,6 @@ func (r *Raft) runLeader() {
 		},
 	}
 	r.dispatchLogs([]*logFuture{noop})
-
-	// Sit in the leader loop until we step down
 	r.leaderLoop()
 }
 
@@ -356,8 +354,7 @@ func (r *Raft) leaderLoop() {
 	}
 }
 
-// verifyLeader must be called from the main thread for safety.
-// Causes the followers to attempt an immediate heartbeat.
+// verifyLeader
 func (r *Raft) verifyLeader(v *verifyFuture) {
 	// Current leader always votes for self
 	v.votes = 1
