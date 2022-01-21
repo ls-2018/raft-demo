@@ -243,20 +243,20 @@ func (r *Raft) liveBootstrap(configuration Configuration) error {
 func (r *Raft) runCandidate() {
 
 	// 首先投自己一票，并设置选举超时
-	voteCh := r.electSelf()
+	voteCh := r.electSelf() // voteCh 投票响应channel
 
 	// 确保每次运行后领导权转移flag被重置。
 	// 有这个flag, 将RequestVoteRequst中的LeadershipTransfer字段设置为 "true"，这将使其他服务器投票
 	// 即使他们已经有一个领导者。
 	// 重置这个标志很重要，因为这个特权可能会被滥用。
-	defer func() { r.candidateFromLeadershipTransfer = false }()
+	defer func() { r.candidateFromLeadershipTransfer = false }() // 执行 defer前 candidateFromLeadershipTransfer=FALSE
 
-	electionTimer := randomTimeout(r.config().ElectionTimeout)
+	electionTimer := randomTimeout(r.config().ElectionTimeout)// 选举超时
 
-	// Tally the votes, need a simple majority
+	// 统计票数，需要简单多数
 	grantedVotes := 0
-	votesNeeded := r.quorumSize()
-	r.logger.Debug("votes", "needed", votesNeeded)
+	votesNeeded := r.quorumSize()// 需要有多少投票才会变成leader
+	r.logger.Debug("竞选", "needed", votesNeeded)
 
 	for r.getState() == Candidate {
 		select {
@@ -264,23 +264,23 @@ func (r *Raft) runCandidate() {
 			r.processRPC(rpc)
 
 		case vote := <-voteCh:
-			// Check if the term is greater than ours, bail
+			// 检查目标主机是否大于当前任期
 			if vote.Term > r.getCurrentTerm() {
-				r.logger.Debug("newer term discovered, fallback to follower")
+				r.logger.Debug("发现新的任期、退化为Flower")
 				r.setState(Follower)
 				r.setCurrentTerm(vote.Term)
 				return
 			}
 
-			// Check if the vote is granted
+			// 检查是否投票
 			if vote.Granted {
 				grantedVotes++
-				r.logger.Debug("vote granted", "from", vote.voterID, "term", vote.Term, "tally", grantedVotes)
+				r.logger.Debug("获得投票", "from", vote.voterID, "term", vote.Term, "tally", grantedVotes)
 			}
 
-			// Check if we've become the leader
+			// 检查是否可以成为leader
 			if grantedVotes >= votesNeeded {
-				r.logger.Info("election won", "tally", grantedVotes)
+				r.logger.Info("竞选获胜", "选票数", grantedVotes)
 				r.setState(Leader)
 				r.setLeader(r.localAddr)
 				return
@@ -306,9 +306,7 @@ func (r *Raft) runCandidate() {
 			b.respond(ErrCantBootstrap)
 
 		case <-electionTimer:
-			// Election failed! Restart the election. We simply return,
-			// which will kick us back into runCandidate
-			r.logger.Warn("Election timeout reached, restarting election")
+			r.logger.Warn("选举已超时，重新开始选举")
 			return
 
 		case <-r.shutdownCh:
@@ -341,17 +339,14 @@ func (r *Raft) setupLeaderState() {
 	r.leaderState.stepDown = make(chan struct{}, 1)
 }
 
-// runLeader runs the FSM for a leader. Do the setup here and drop into
-// the leaderLoop for the hot loop.
+// runLeader 在这里设置让leader运行FSM，并将其放入leaderLoop
 func (r *Raft) runLeader() {
-	r.logger.Info("entering leader state", "leader", r)
+	r.logger.Info("进入 leader state", "leader", r)
 
-	// Notify that we are the leader
+	// 通知所有人，只是将true 放入了leaderCh
 	overrideNotifyBool(r.leaderCh, true)
 
-	// Store the notify chan. It's not reloadable so shouldn't change before the
-	// defer below runs, but this makes sure we always notify the same chan if
-	// ever for both gaining and loosing leadership.
+	// 存储通知通道。它是不可重载的，所以在下面的defer运行之前不应该改变，但这可以确保我们在获得和失去领导权的情况下总是通知同一个chan。
 	notify := r.config().NotifyCh
 
 	// Push to the notify channel if given
@@ -904,9 +899,7 @@ func (r *Raft) checkLeaderLease() time.Duration {
 	return maxDiff
 }
 
-// quorumSize is used to return the quorum size. This must only be called on
-// the main thread.
-// TODO: revisit usage
+// quorumSize 用来返回竞选者一半的大小。 //2 + 1
 func (r *Raft) quorumSize() int {
 	voters := 0
 	for _, server := range r.configurations.latest.Servers {

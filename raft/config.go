@@ -164,9 +164,7 @@ type Config struct {
 	// LocalID 是该服务器在所有时间内的唯一ID。当使用ProtocolVersion < 3运行时，你必须将其设置为与传输的网络地址相同。
 	LocalID ServerID
 
-	// NotifyCh is used to provide a channel that will be notified of leadership
-	// changes. Raft will block writing to this channel, so it should either be
-	// buffered or aggressively consumed.
+	// NotifyCh 是用来提供一个通知领导层变化的通道。Raft将阻止对该通道的写入，所以它应该被缓冲或积极地消耗。
 	NotifyCh chan<- bool
 
 	// LogOutput 默认 os.Stderr.

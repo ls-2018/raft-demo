@@ -93,21 +93,18 @@ func asyncNotifyBool(ch chan bool, v bool) {
 	}
 }
 
-// overrideNotifyBool is used to notify on a bool channel
-// but override existing value if value is present.
-// ch must be 1-item buffered channel.
-//
-// This method does not support multiple concurrent calls.
+// overrideNotifyBool
+// 用于通知一个bool通道，但如果值存在，则覆盖现有的值，ch必须是1项缓冲通道。该方法不支持多个并发的调用。
 func overrideNotifyBool(ch chan bool, v bool) {
 	select {
-	case ch <- v:
-		// value sent, all done
+	case ch <- v: // 如果channel 没值，走这
+		// 值已发送，完成
 	case <-ch:
-		// channel had an old value
+		// 如果channel 有值，需要排除旧的，添加新的
 		select {
 		case ch <- v:
 		default:
-			panic("race: channel was sent concurrently")
+			panic("race: channel 并发调用了")
 		}
 	}
 }

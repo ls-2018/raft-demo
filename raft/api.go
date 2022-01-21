@@ -91,7 +91,7 @@ type Raft struct {
 	// fsmSnapshotCh 用来触发新的快照拍摄。
 	fsmSnapshotCh chan *reqSnapshotFuture
 
-	// lastContact 是我们最后一次与领导节点通信的时间。这可以用来衡量呆滞性。
+	// lastContact 是我们最后一次与leader节点通信的时间。这可以用来衡量呆滞性。
 	lastContact     time.Time // 默认是零值，即0001-01-01 00:00:00 +0000
 	lastContactLock sync.RWMutex
 
@@ -105,7 +105,7 @@ type Raft struct {
 	// leaderState 只有 leader 是有此值
 	leaderState leaderState
 
-	// candidateFromLeadershipTransfer 表示  leader -> candidate。这个标志在RequestVoteRequest中被用来表示正在进行领导权的转移。进行中。
+	// candidateFromLeadershipTransfer 表示  leader -> candidate。这个标志在RequestVoteRequest中被用来表示正在进行leader的转移。进行中。
 	candidateFromLeadershipTransfer bool
 
 	// 服务器的逻辑ID 存储我们的本地服务器ID，用于避免向我们自己发送RPC。
@@ -148,7 +148,7 @@ type Raft struct {
 	// 使用的传输层
 	trans Transport
 
-	// verifyCh  用于向主线程异步发送验证请求，以验证我们仍然是领导者。
+	// verifyCh  用于向主线程异步发送验证请求，以验证我们仍然是leader者。
 	verifyCh chan *verifyFuture
 
 	// configurationsCh 安全的从主线程之外获取配置
@@ -162,7 +162,7 @@ type Raft struct {
 	observersLock sync.RWMutex
 	observers     map[uint64]*Observer
 
-	// leadershipTransferCh 是用来从主线程之外启动领导权转移的。
+	// leadershipTransferCh 是用来从主线程之外启动leader转移的。
 	leadershipTransferCh chan *leadershipTransferFuture
 }
 
@@ -971,17 +971,13 @@ func (r *Raft) State() RaftState {
 	return r.getState()
 }
 
-// LeaderCh is used to get a channel which delivers signals on acquiring or
-// losing leadership. It sends true if we become the leader, and false if we
-// lose it.
+// LeaderCh 是用来获得一个通道，该通道传递关于获得或失去leader的信号。
+// 如果我们成为leader，它就会发出真信号，如果我们失去leader，就会发出假信号。
 //
-// Receivers can expect to receive a notification only if leadership
-// transition has occured.
+// 只有在leader交接的情况下，接收者才会收到通知。
 //
-// If receivers aren't ready for the signal, signals may drop and only the
-// latest leadership transition. For example, if a receiver receives subsequent
-// `true` values, they may deduce that leadership was lost and regained while
-// the the receiver was processing first leadership transition.
+// 如果receiver没有为信号做好准备，信号可能会丢失，只有最新的leader转移。
+// 例如，如果一个接收者收到后续的 "true "值，他们可能会推断出leader的丧失和重新获得，同时 接收者正在处理第一个leader转换。
 func (r *Raft) LeaderCh() <-chan bool {
 	return r.leaderCh
 }

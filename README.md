@@ -159,4 +159,8 @@ RequestVote(本机的逻辑ID, 本机的通信地址, req, &resp.RequestVoteResp
   - handleCommand
   - processRPC
   - requestVote
-  - 
+
+当某个节点得到了大多数的请求，自己就会变成leader,此时再有投票请求到来不会,不会对其投票【除非设置LeadershipTransfer=true】
+
+问题：
+  1、集群最初，假设有两个节点都获得大多数投票，都使自身成为了leader？

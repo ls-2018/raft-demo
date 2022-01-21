@@ -59,7 +59,7 @@ func main() {
 
 	// 监听leader变化
 	go func() {
-		for leader := range myRaft.LeaderCh() {
+		for leader := range myRaft.LeaderCh() { // 只有此一处，用于监听leader变化
 			if leader {
 				atomic.StoreInt64(&isLeader, 1)
 			} else {
