@@ -161,7 +161,7 @@ func (b *BoltStore) StoreLogs(logs []*raft.Log) error {
 	}
 	defer tx.Rollback()
 	for _, log := range logs {
-		fmt.Printf("---------> 存储数据 key: %+v,value :%+v\n",log.Index,log)
+		fmt.Printf("------------->  log  存储数据 key: %+v,value :%+v\n", log.Index, raft.TransLog(log))
 		key := uint64ToBytes(log.Index)
 		val, err := encodeMsgPack(log)
 		if err != nil {
@@ -208,6 +208,7 @@ func (b *BoltStore) Set(k, v []byte) error {
 		return err
 	}
 	defer tx.Rollback()
+	fmt.Printf("+++++++++++++> state 存储数据 key: %s,value :%s\n", string(k), string(v))
 
 	bucket := tx.Bucket(DbConf)
 	if err := bucket.Put(k, v); err != nil {

@@ -87,17 +87,16 @@ func (r *Raft) appendEntries(rpc RPC, a *AppendEntriesRequest) {
 
 	// 验证最新的日志
 	if a.PrevLogEntry > 0 {
-		lastIdx, lastTerm := r.getLastEntry()
+		lastIdx, lastTerm := r.getLastEntry() // 获取follower最新的日志索引、任期
 
 		var prevLogTerm uint64
 		if a.PrevLogEntry == lastIdx {
-			prevLogTerm = lastTerm
-
+			prevLogTerm = lastTerm // 日志索引一样、任期应该一致
+			//	 TODO 一会儿找不一致的情况，😁    ？？不同集群的节点，
 		} else {
 			var prevLog Log
 			if err := r.logs.GetLog(a.PrevLogEntry, &prevLog); err != nil {
-				r.logger.Warn("获取最新日志失败",
-					"请求的索引", a.PrevLogEntry, "最新的索引", lastIdx, "error", err)
+				r.logger.Warn("获取最新日志失败", "请求的索引", a.PrevLogEntry, "最新的索引", lastIdx, "error", err)
 				resp.NoRetryBackoff = true
 				return
 			}
@@ -105,18 +104,15 @@ func (r *Raft) appendEntries(rpc RPC, a *AppendEntriesRequest) {
 		}
 
 		if a.PrevLogTerm != prevLogTerm {
-			r.logger.Warn("previous log term mis-match",
-				"ours", prevLogTerm,
-				"remote", a.PrevLogTerm)
+			r.logger.Warn("与之前的任期不一样", "ours", prevLogTerm, "remote", a.PrevLogTerm)
 			resp.NoRetryBackoff = true
 			return
 		}
 	}
 
-	// Process any new entries
+	// 处理每一个日志
 	if len(a.Entries) > 0 {
-
-		// Delete any conflicting entries, skip any duplicates
+		// 删除任何冲突的条目，跳过任何重复的条目
 		lastLogIdx, _ := r.getLastLog()
 		var newEntries []*Log
 		for i, entry := range a.Entries {
@@ -191,7 +187,6 @@ func (r *Raft) appendEntries(rpc RPC, a *AppendEntriesRequest) {
 // processConfigurationLogEntry
 // 从logState中获取快照中没有的数据,然后对每一个log 调用此函数
 func (r *Raft) processConfigurationLogEntry(entry *Log) error {
-	fmt.Printf("======>  %+v\n", *entry)
 	switch entry.Type {
 	case LogConfiguration: //
 		r.setCommittedConfiguration(r.configurations.latest, r.configurations.latestIndex)

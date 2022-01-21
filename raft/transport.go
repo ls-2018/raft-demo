@@ -35,10 +35,10 @@ type Transport interface {
 	// AppendEntries requests.
 	AppendEntriesPipeline(id ServerID, target ServerAddress) (AppendPipeline, error)
 
-	// AppendEntries 追加日志请求  raft/raft.go:1198
+	// AppendEntries 追加日志请求  raft/rpc_call.go:55
 	AppendEntries(id ServerID, target ServerAddress, args *AppendEntriesRequest, resp *AppendEntriesResponse) error
 
-	// RequestVote 发送投票请求到目标节点 raft/raft.go:1201
+	// RequestVote 发送投票请求到目标节点 raft/rpc_call.go:
 	RequestVote(id ServerID, target ServerAddress, args *RequestVoteRequest, resp *RequestVoteResponse) error
 
 	// InstallSnapshot is used to push a snapshot down to a follower. The data is read from

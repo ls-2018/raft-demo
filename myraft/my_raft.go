@@ -1,7 +1,6 @@
 package myraft
 
 import (
-	"fmt"
 	"log"
 	"net"
 	"os"
@@ -26,6 +25,8 @@ func NewMyRaft(raftAddr, raftId, raftDir string) (*raft.Raft, *fsm.Fsm, error) {
 	if err != nil {
 		log.Fatal(err)
 	}
+	raft.SetTrans(transport)
+
 	// 日志存储
 	var logStore *raftboltdb.BoltStore
 	logStore, err = raftboltdb.NewBoltStore(filepath.Join(raftDir, "raft-log.db"))
@@ -51,7 +52,6 @@ func NewMyRaft(raftAddr, raftId, raftDir string) (*raft.Raft, *fsm.Fsm, error) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Println(raft.HasExistingState(logStore, stableStore, snapshots))
 	return rf, fm, nil
 }
 

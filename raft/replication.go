@@ -26,7 +26,7 @@ type followerReplication struct {
 	// 32位平台的为了原子操作 需要 64bit对齐
 	// currentTerm leader当前的任期
 	currentTerm uint64
-	// nextIndex 吓一跳要发送给follower的日志
+	// nextIndex 下一条要发送给follower的日志
 	nextIndex uint64
 
 	// peer 包含远程follower的网络地址和ID。
@@ -185,15 +185,16 @@ START:
 	peer = s.peer
 	s.peerLock.RUnlock()
 
-	// 设置最新的日志索引
+	// 填充req需要携带的内容
 	if err := r.setupAppendEntries(s, &req, atomic.LoadUint64(&s.nextIndex), lastIndex); err == ErrLogNotFound {
-		goto SEND_SNAP
+		goto SendSnap
 	} else if err != nil {
+		// 其他错误
 		return
 	}
-
+	// 发起请求调用
 	if err := r.trans.AppendEntries(peer.ID, peer.Address, &req, &resp); err != nil {
-		r.logger.Error("failed to appendEntries to", "peer", peer, "error", err)
+		r.logger.Error("appendEntries失败", "peer", peer, "error", err)
 		s.failures++
 		return
 	}
@@ -224,7 +225,7 @@ START:
 		r.logger.Warn("appendEntries rejected, sending older logs", "peer", peer, "next", atomic.LoadUint64(&s.nextIndex))
 	}
 
-CHECK_MORE:
+CheckMore:
 	// Poll the stop channel here in case we are looping and have been asked
 	// to stop, or have stepped down as leader. Even for the best effort case
 	// where we are asked to replicate to a given index and then shutdown,
@@ -242,18 +243,17 @@ CHECK_MORE:
 	}
 	return
 
-	// SEND_SNAP is used when we fail to get a log, usually because the follower
-	// is too far behind, and we must ship a snapshot down instead
-SEND_SNAP:
+	//	 当获取日志失败,通常是因为follower落后太多，我们必须用快照来代替。
+SendSnap:
 	if stop, err := r.sendLatestSnapshot(s); stop {
 		return true
 	} else if err != nil {
-		r.logger.Error("failed to send snapshot to", "peer", peer, "error", err)
+		r.logger.Error("发送快照失败", "peer", peer, "error", err)
 		return
 	}
 
-	// Check if there is more to replicate
-	goto CHECK_MORE
+	// 检查是否有更多需要复制的内容
+	goto CheckMore
 }
 
 // sendLatestSnapshot is used to send the latest snapshot we have
@@ -501,14 +501,15 @@ func (r *Raft) pipelineDecode(s *followerReplication, p AppendPipeline, stopCh, 
 
 // setupAppendEntries 是用来设置一个追加条目的请求。
 func (r *Raft) setupAppendEntries(s *followerReplication, req *AppendEntriesRequest, nextIndex, lastIndex uint64) error {
+	// nextIndex 下一条要发送给follower的日志索引
 	req.RPCHeader = r.getRPCHeader()
-	req.Term = s.currentTerm                                // leader 的任期
-	req.Leader = r.trans.EncodePeer(r.localID, r.localAddr) // localAddr
-	req.LeaderCommitIndex = r.getCommitIndex()              // leader最新的提交索引
-	if err := r.setPreviousLog(req, nextIndex); err != nil {
+	req.Term = s.currentTerm                                 // leader 的任期
+	req.Leader = r.trans.EncodePeer(r.localID, r.localAddr)  // localAddr
+	req.LeaderCommitIndex = r.getCommitIndex()               // leader最新的提交索引
+	if err := r.setPreviousLog(req, nextIndex); err != nil { // 设置leader已有、follower未有的日志索引
 		return err
 	}
-	if err := r.setNewLogs(req, nextIndex, lastIndex); err != nil {
+	if err := r.setNewLogs(req, nextIndex, lastIndex); err != nil { //从db读取指定索引段的日志，并将其添加到req
 		return err
 	}
 	return nil
@@ -516,42 +517,40 @@ func (r *Raft) setupAppendEntries(s *followerReplication, req *AppendEntriesRequ
 
 // OK
 func (r *Raft) setPreviousLog(req *AppendEntriesRequest, nextIndex uint64) error {
-	// Guard for the first index, since there is no 0 log entry
-	// Guard against the previous index being a snapshot as well
-	// 对第一个索引进行防护，因为没有0日志条目 对前一个索引也是快照进行防护
+	// nextIndex 下一条要发送给follower的日志索引
 	lastSnapIdx, lastSnapTerm := r.getLastSnapshot()
 	if nextIndex == 1 {
 		req.PrevLogEntry = 0
 		req.PrevLogTerm = 0
-	} else if (nextIndex - 1) == lastSnapIdx {
+	} else if (nextIndex - 1) == lastSnapIdx { // 下一条-1==最新的快照索引; 之前的日志所有索引就是 最新的日志索引
 		req.PrevLogEntry = lastSnapIdx
 		req.PrevLogTerm = lastSnapTerm
-	} else {
+	} else { // 有新日志产生，且没有写入快照中
 		var l Log
-		if err := r.logs.GetLog(nextIndex-1, &l); err != nil {
+		if err := r.logs.GetLog(nextIndex-1, &l); err != nil { //获取当前要发送给follower的日志数据
 			r.logger.Error("获取日志失败", "index", nextIndex-1, "error", err)
 			return err
 		}
-
-		// Set the previous index and term (0 if nextIndex is 1)
+		// 设置之前的日志索引、任期
 		req.PrevLogEntry = l.Index
 		req.PrevLogTerm = l.Term
 	}
 	return nil
 }
 
-// setNewLogs is used to setup the logs which should be appended for a request.
+// setNewLogs 从db读取指定索引段的日志，并将其添加到req
 func (r *Raft) setNewLogs(req *AppendEntriesRequest, nextIndex, lastIndex uint64) error {
-	// Append up to MaxAppendEntries or up to the lastIndex. we need to use a
-	// consistent value for maxAppendEntries in the lines below in case it ever
-	// becomes reloadable.
-	maxAppendEntries := r.config().MaxAppendEntries
+	// nextIndex 下一条要发送给follower的日志索引
+	// 我们需要在下面几行中使用一个一致的maxAppendEntries的值，以备它可以重新加载。
+	maxAppendEntries := r.config().MaxAppendEntries // 日志允许的最大一次性可追加条数,默认64
 	req.Entries = make([]*Log, 0, maxAppendEntries)
-	maxIndex := min(nextIndex+uint64(maxAppendEntries)-1, lastIndex)
+
+	maxIndex := min(nextIndex+uint64(maxAppendEntries)-1, lastIndex) // 日志最大索引 要发送哪
+
 	for i := nextIndex; i <= maxIndex; i++ {
 		oldLog := new(Log)
 		if err := r.logs.GetLog(i, oldLog); err != nil {
-			r.logger.Error("failed to get log", "index", i, "error", err)
+			r.logger.Error("获取日志失败", "index", i, "error", err)
 			return err
 		}
 		req.Entries = append(req.Entries, oldLog)

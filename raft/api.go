@@ -178,8 +178,7 @@ type Raft struct {
 // One approach is to bootstrap a single server with a configuration
 // listing just itself as a Voter, then invoke AddVoter() on it to add other
 // servers to the cluster.
-func BootstrapCluster(conf *Config, logs LogStore, stable StableStore,
-	snaps SnapshotStore, trans Transport, configuration Configuration) error {
+func BootstrapCluster(conf *Config, logs LogStore, stable StableStore, snaps SnapshotStore, trans Transport, configuration Configuration) error {
 	// Validate the Raft server config.
 	if err := ValidateConfig(conf); err != nil {
 		return err
@@ -522,7 +521,6 @@ func NewRaft(conf *Config, fsm FSM, logs LogStore, stable StableStore, snaps Sna
 	snapshotIndex, _ := r.getLastSnapshot()
 	//  如果快照的数据< 当前日志的数据
 	for index := snapshotIndex + 1; index <= lastLog.Index; index++ {
-		fmt.Println("============================================")
 		var entry Log
 		// 从logState中获取快照中没有的数据
 		if err := r.logs.GetLog(index, &entry); err != nil {
@@ -535,8 +533,7 @@ func NewRaft(conf *Config, fsm FSM, logs LogStore, stable StableStore, snaps Sna
 		}
 	}
 	r.logger.Info("初始化配置",
-		"index", r.configurations.latestIndex,
-		"servers", hclog.Fmt("%+v", r.configurations.latest.Servers))
+		"index", r.configurations.latestIndex, "servers", hclog.Fmt("%+v", r.configurations.latest.Servers))
 
 	// 设置一个心跳快速路径，尽可能避免线头阻塞。这必须是安全的，因为它可以与一个阻塞的RPC同时调用。
 	trans.SetHeartbeatHandler(r.processHeartbeat)

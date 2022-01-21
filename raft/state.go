@@ -141,8 +141,7 @@ func (r *raftState) waitShutdown() {
 	r.routinesGroup.Wait()
 }
 
-// getLastIndex returns the last index in stable storage.
-// Either from the last log or from the last snapshot.
+// getLastIndex  获取快照、日志中最大的索引
 func (r *raftState) getLastIndex() uint64 {
 	r.lastLock.Lock()
 	defer r.lastLock.Unlock()

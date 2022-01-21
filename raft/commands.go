@@ -19,7 +19,7 @@ type AppendEntriesRequest struct {
 	Term   uint64
 	Leader []byte
 
-	// 提供以前的条目进行完整性检查
+	// 从leader角度出发,从follower看,xx日志已写入leader，但是follower没有，xx对follower来说就是pre
 	PrevLogEntry uint64
 	PrevLogTerm  uint64
 
@@ -47,8 +47,7 @@ type AppendEntriesResponse struct {
 	// We may not succeed if we have a conflicting entry
 	Success bool
 
-	// There are scenarios where this request didn't succeed
-	// but there's no need to wait/back-off the next attempt.
+	// 有些情况下，这个请求没有成功，但没有必要等待/回避下一次尝试。
 	NoRetryBackoff bool
 }
 
