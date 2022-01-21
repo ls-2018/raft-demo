@@ -104,7 +104,7 @@ func (r *raftState) getLastSnapshot() (index, term uint64) {
 	r.lastLock.Unlock()
 	return
 }
-
+// 设置最新的快照的 索引、任期
 func (r *raftState) setLastSnapshot(index, term uint64) {
 	r.lastLock.Lock()
 	r.lastSnapshotIndex = index

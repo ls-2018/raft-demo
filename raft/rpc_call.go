@@ -51,13 +51,13 @@ func (r *Raft) processHeartbeat(rpc RPC) {
 	}
 }
 
-// appendEntries 当我们得到一个追加条目的RPC调用时被调用。这必须只在主线程中调用。
+// appendEntries 当我们得到一个追加条目的RPC调用时被调用。心跳也是走的这。
 func (r *Raft) appendEntries(rpc RPC, a *AppendEntriesRequest) {
 	// 设置响应
 	resp := &AppendEntriesResponse{
 		RPCHeader:      r.getRPCHeader(),
 		Term:           r.getCurrentTerm(),
-		LastLog:        r.getLastIndex(),
+		LastLog:        r.getLastIndex(), // follower节点最新的日志索引
 		Success:        false,
 		NoRetryBackoff: false,
 	}
@@ -66,24 +66,26 @@ func (r *Raft) appendEntries(rpc RPC, a *AppendEntriesRequest) {
 		rpc.Respond(resp, rpcErr)
 	}()
 
-	// Ignore an older term
+	// 不会接受小于自己任期的数据追加
 	if a.Term < r.getCurrentTerm() {
 		return
 	}
 
-	// Increase the term if we see a newer one, also transition to follower
-	// if we ever get an appendEntries call
+	// 请求的任期 大于当前任期 || 当前的状态不是Follower
 	if a.Term > r.getCurrentTerm() || r.getState() != Follower {
-		// Ensure transition to follower
 		r.setState(Follower)
 		r.setCurrentTerm(a.Term)
 		resp.Term = a.Term
 	}
+	// a:leader b:leader
+	// a heartbeat -> b ; 因为b是leader了;设置b为follower
+	// 如果 在这之间 b heartbeat -> a ;因为a是leader了;设置a为follower
+	// 重新进入选举流程
 
-	// Save the current leader
+	// 设置当前节点的leader
 	r.setLeader(r.trans.DecodePeer(a.Leader))
 
-	// Verify the last log entry
+	// 验证最新的日志
 	if a.PrevLogEntry > 0 {
 		lastIdx, lastTerm := r.getLastEntry()
 
@@ -94,10 +96,8 @@ func (r *Raft) appendEntries(rpc RPC, a *AppendEntriesRequest) {
 		} else {
 			var prevLog Log
 			if err := r.logs.GetLog(a.PrevLogEntry, &prevLog); err != nil {
-				r.logger.Warn("failed to get previous log",
-					"previous-index", a.PrevLogEntry,
-					"last-index", lastIdx,
-					"error", err)
+				r.logger.Warn("获取最新日志失败",
+					"请求的索引", a.PrevLogEntry, "最新的索引", lastIdx, "error", err)
 				resp.NoRetryBackoff = true
 				return
 			}

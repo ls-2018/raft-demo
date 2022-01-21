@@ -10,17 +10,15 @@ import (
 
 const (
 	maxFailureScale = 12
-	failureWait     = 10 * time.Millisecond
+	failureWait     = 10 * time.Millisecond // 失败重试间隔
 )
 
 var (
-	// ErrLogNotFound indicates a given log entry is not available.
+	// ErrLogNotFound 表示一个给定的日志条目是不可用的。
 	ErrLogNotFound = errors.New("log not found")
 
-	// ErrPipelineReplicationNotSupported can be returned by the transport to
-	// signal that pipeline replication is not supported in general, and that
-	// no error message should be produced.
-	ErrPipelineReplicationNotSupported = errors.New("pipeline replication not supported")
+	// ErrPipelineReplicationNotSupported 表示一般不支持管道复制，并且不应该产生错误信息。
+	ErrPipelineReplicationNotSupported = errors.New("不支持管道复制")
 )
 
 // followerReplication 负责在这个特定的期限内将这个leader的快照和日志条目发送给一个远程的follower。
@@ -83,7 +81,7 @@ func (s *followerReplication) notifyAll(leader bool) {
 	}
 }
 
-// cleanNotify is used to delete notify, .
+// cleanNotify 用于删除待验证的请求
 func (s *followerReplication) cleanNotify(v *verifyFuture) {
 	s.notifyLock.Lock()
 	delete(s.notify, v)
@@ -106,6 +104,7 @@ func (s *followerReplication) setLastContact() {
 }
 
 // replicate goroutine长期运行，它将日志条目复制到一个特定的follower。
+// 对每个follower启动一个replicate  ，承担心跳、日志同步的职责
 func (r *Raft) replicate(s *followerReplication) {
 	// 开启异步心跳请求
 	stopHeartbeat := make(chan struct{})
@@ -113,11 +112,11 @@ func (r *Raft) replicate(s *followerReplication) {
 	r.goFunc(func() { r.heartbeat(s, stopHeartbeat) })
 
 RPC:
-	shouldStop := false
+	shouldStop := false // 应该停止
 	for !shouldStop {
 		select {
 		case maxIndex := <-s.stopCh:
-			// Make a best effort to replicate up to this index
+			// 尽最大努力复制到这个索引
 			if maxIndex > 0 {
 				r.replicateTo(s, maxIndex)
 			}
@@ -130,21 +129,20 @@ RPC:
 			} else {
 				deferErr.respond(fmt.Errorf("replication failed"))
 			}
-		case <-s.triggerCh:
-			lastLogIdx, _ := r.getLastLog()
+		case <-s.triggerCh: // 有新的日志产生
+			lastLogIdx, _ := r.getLastLog() // 之前存储了一条Type:LogConfiguration数据  ----> 1
 			shouldStop = r.replicateTo(s, lastLogIdx)
-		// This is _not_ our heartbeat mechanism but is to ensure
-		// followers quickly learn the leader's commit index when
-		// raft commits stop flowing naturally. The actual heartbeats
-		// can't do this to keep them unblocked by disk IO on the
-		// follower. See https://github.com/hashicorp/raft/issues/282.
+
+		// 这不是我们的心跳机制，而是为了确保在筏式提交停止自然流动时，跟随者能迅速了解领导者的提交索引。
+		// 实际的心跳不能做到这一点，以保持它们不被跟随者的磁盘IO所阻挡。
+		// See https://github.com/hashicorp/raft/issues/282.
 		case <-randomTimeout(r.config().CommitTimeout):
 			lastLogIdx, _ := r.getLastLog()
 			shouldStop = r.replicateTo(s, lastLogIdx)
 		}
 
-		// If things looks healthy, switch to pipeline mode
-		if !shouldStop && s.allowPipeline {
+		// 如果事情看起来很健康，就切换到管道模式
+		if !shouldStop && s.allowPipeline { // 走到这的时候是不支持
 			goto PIPELINE
 		}
 	}
@@ -168,18 +166,14 @@ PIPELINE:
 	goto RPC
 }
 
-// replicateTo is a helper to replicate(), used to replicate the logs up to a
-// given last index.
-// If the follower log is behind, we take care to bring them up to date.
+// replicateTo   用于更新follower副本的日志索引
 func (r *Raft) replicateTo(s *followerReplication, lastIndex uint64) (shouldStop bool) {
-	// Create the base request
 	var req AppendEntriesRequest
 	var resp AppendEntriesResponse
-	var start time.Time
 	var peer Server
 
 START:
-	// Prevent an excessive retry rate on errors
+	// 防止错误时重试率过高，等一会儿
 	if s.failures > 0 {
 		select {
 		case <-time.After(backoff(failureWait, s.failures, maxFailureScale)):
@@ -191,29 +185,25 @@ START:
 	peer = s.peer
 	s.peerLock.RUnlock()
 
-	// Setup the request
+	// 设置最新的日志索引
 	if err := r.setupAppendEntries(s, &req, atomic.LoadUint64(&s.nextIndex), lastIndex); err == ErrLogNotFound {
 		goto SEND_SNAP
 	} else if err != nil {
 		return
 	}
 
-	// Make the RPC call
-	start = time.Now()
 	if err := r.trans.AppendEntries(peer.ID, peer.Address, &req, &resp); err != nil {
 		r.logger.Error("failed to appendEntries to", "peer", peer, "error", err)
 		s.failures++
 		return
 	}
-	appendStats(string(peer.ID), start, float32(len(req.Entries)))
-
 	// Check for a newer term, stop running
 	if resp.Term > req.Term {
 		r.handleStaleTerm(s)
 		return true
 	}
 
-	// Update the last contact
+	// 更新与follower的通信时间
 	s.setLastContact()
 
 	// Update s based on success
@@ -365,7 +355,7 @@ func (r *Raft) heartbeat(s *followerReplication, stopCh chan struct{}) {
 		s.peerLock.RUnlock()
 		// 发送追加日志请求
 		if err := r.trans.AppendEntries(peer.ID, peer.Address, &req, &resp); err != nil {
-			r.logger.Error("failed to heartbeat to", "peer", peer.Address, "error", err)
+			r.logger.Error("心跳失败", "peer", peer.Address, "error", err)
 			r.observe(FailedHeartbeatObservation{PeerID: peer.ID, LastContact: s.LastContact()})
 			failures++
 			select {
@@ -483,11 +473,9 @@ func (r *Raft) pipelineDecode(s *followerReplication, p AppendPipeline, stopCh, 
 		select {
 		case ready := <-respCh:
 			s.peerLock.RLock()
-			peer := s.peer
 			s.peerLock.RUnlock()
 
 			req, resp := ready.Request(), ready.Response()
-			appendStats(string(peer.ID), ready.Start(), float32(len(req.Entries)))
 
 			// Check for a newer term, stop running
 			if resp.Term > req.Term {
@@ -511,12 +499,12 @@ func (r *Raft) pipelineDecode(s *followerReplication, p AppendPipeline, stopCh, 
 	}
 }
 
-// setupAppendEntries is used to setup an append entries request.
+// setupAppendEntries 是用来设置一个追加条目的请求。
 func (r *Raft) setupAppendEntries(s *followerReplication, req *AppendEntriesRequest, nextIndex, lastIndex uint64) error {
 	req.RPCHeader = r.getRPCHeader()
-	req.Term = s.currentTerm
-	req.Leader = r.trans.EncodePeer(r.localID, r.localAddr)
-	req.LeaderCommitIndex = r.getCommitIndex()
+	req.Term = s.currentTerm                                // leader 的任期
+	req.Leader = r.trans.EncodePeer(r.localID, r.localAddr) // localAddr
+	req.LeaderCommitIndex = r.getCommitIndex()              // leader最新的提交索引
 	if err := r.setPreviousLog(req, nextIndex); err != nil {
 		return err
 	}
@@ -526,24 +514,22 @@ func (r *Raft) setupAppendEntries(s *followerReplication, req *AppendEntriesRequ
 	return nil
 }
 
-// setPreviousLog is used to setup the PrevLogEntry and PrevLogTerm for an
-// AppendEntriesRequest given the next index to replicate.
+// OK
 func (r *Raft) setPreviousLog(req *AppendEntriesRequest, nextIndex uint64) error {
 	// Guard for the first index, since there is no 0 log entry
 	// Guard against the previous index being a snapshot as well
+	// 对第一个索引进行防护，因为没有0日志条目 对前一个索引也是快照进行防护
 	lastSnapIdx, lastSnapTerm := r.getLastSnapshot()
 	if nextIndex == 1 {
 		req.PrevLogEntry = 0
 		req.PrevLogTerm = 0
-
 	} else if (nextIndex - 1) == lastSnapIdx {
 		req.PrevLogEntry = lastSnapIdx
 		req.PrevLogTerm = lastSnapTerm
-
 	} else {
 		var l Log
 		if err := r.logs.GetLog(nextIndex-1, &l); err != nil {
-			r.logger.Error("failed to get log", "index", nextIndex-1, "error", err)
+			r.logger.Error("获取日志失败", "index", nextIndex-1, "error", err)
 			return err
 		}
 
@@ -571,10 +557,6 @@ func (r *Raft) setNewLogs(req *AppendEntriesRequest, nextIndex, lastIndex uint64
 		req.Entries = append(req.Entries, oldLog)
 	}
 	return nil
-}
-
-// appendStats is used to emit stats about an AppendEntries invocation.
-func appendStats(peer string, start time.Time, logs float32) {
 }
 
 // handleStaleTerm is used when a follower indicates that we have a stale term.

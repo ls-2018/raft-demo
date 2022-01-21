@@ -164,3 +164,11 @@ RequestVote(本机的逻辑ID, 本机的通信地址, req, &resp.RequestVoteResp
 
 问题：
   1、集群最初，假设有两个节点都获得大多数投票，都使自身成为了leader？
+  
+```在发送心跳的时候,会解决这个问题
+	if a.Term > r.getCurrentTerm() || r.getState() != Follower {
+		r.setState(Follower)
+		r.setCurrentTerm(a.Term)
+		resp.Term = a.Term
+	}
+```
