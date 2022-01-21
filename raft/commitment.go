@@ -68,7 +68,7 @@ func (c *commitment) getCommitIndex() uint64 {
 
 // 一旦服务器完成了向磁盘写入条目的工作，就会调用Match：
 // 要么是leader写入了新条目；
-// 要么是flower回复了AppendEntries RPC。给定的服务器的磁盘与该服务器的日志在给定的索引前一致。
+// 要么是follower回复了AppendEntries RPC。给定的服务器的磁盘与该服务器的日志在给定的索引前一致。
 func (c *commitment) match(server ServerID, matchIndex uint64) {
 	c.Lock()
 	defer c.Unlock()

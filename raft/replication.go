@@ -23,70 +23,48 @@ var (
 	ErrPipelineReplicationNotSupported = errors.New("pipeline replication not supported")
 )
 
-// followerReplication is in charge of sending snapshots and log entries from
-// this leader during this particular term to a remote follower.
+// followerReplication 负责在这个特定的期限内将这个leader的快照和日志条目发送给一个远程的follower。
 type followerReplication struct {
-	// currentTerm and nextIndex must be kept at the top of the struct so
-	// they're 64 bit aligned which is a requirement for atomic ops on 32 bit
-	// platforms.
-
-	// currentTerm is the term of this leader, to be included in AppendEntries
-	// requests.
+	// 32位平台的为了原子操作 需要 64bit对齐
+	// currentTerm leader当前的任期
 	currentTerm uint64
-
-	// nextIndex is the index of the next log entry to send to the follower,
-	// which may fall past the end of the log.
+	// nextIndex 吓一跳要发送给follower的日志
 	nextIndex uint64
 
-	// peer 包含远程flower的网络地址和ID。
-	peer Server
-	// peerLock protects 'peer'
+	// peer 包含远程follower的网络地址和ID。
+	peer     Server
 	peerLock sync.RWMutex
 
-	// commitment tracks the entries acknowledged by followers so that the
-	// leader's commit index can advance. It is updated on successful
-	// AppendEntries responses.
+	// commitment 跟踪被follower承认的条目，以便领导者的commit index可以增加。它在成功的AppendEntries响应时被更新。
 	commitment *commitment
 
-	// stopCh is notified/closed when this leader steps down or the follower is
-	// removed from the cluster. In the follower removed case, it carries a log
-	// index; replication should be attempted with a best effort up through that
-	// index, before exiting.
+	// 当leader变换 发送通知
+	// follower从集群移除->close. 携带一个日志索引，应该尽最大努力通过该索引来尝试复制。  在退出之前，
 	stopCh chan uint64
 
-	// triggerCh is notified every time new entries are appended to the log.
+	// triggerCh 节点刚成为leader；每当有新的条目被添加到日志中时，就会得到通知。
 	triggerCh chan struct{}
 
-	// triggerDeferErrorCh is used to provide a backchannel. By sending a
-	// deferErr, the sender can be notifed when the replication is done.
+	// triggerDeferErrorCh  是用来提供一个返回通道的。通过发送deferErr，发送方可以在复制完成后得到通知。
 	triggerDeferErrorCh chan *deferError
 
-	// lastContact is updated to the current time whenever any response is
-	// received from the follower (successful or not). This is used to check
-	// whether the leader should step down (Raft.checkLeaderLease()).
-	lastContact time.Time
-	// lastContactLock protects 'lastContact'.
+	// lastContact 上一次与该节点进行通信的时间、无论成功与否             ,用来检查leader是否应该转移
+	lastContact     time.Time
 	lastContactLock sync.RWMutex
 
-	// failures counts the number of failed RPCs since the last success, which is
-	// used to apply backoff.
+	// failures 统计自上次成功RPC请求之后的失败次数，用于计算backoff
 	failures uint64
 
-	// notifyCh is notified to send out a heartbeat, which is used to check that
-	// this server is still leader.
+	// notifyCh 需要发送心跳的channel，用来检查本节点是不是leader
 	notifyCh chan struct{}
-	// notify is a map of futures to be resolved upon receipt of an
-	// acknowledgement, then cleared from this map.
-	notify map[*verifyFuture]struct{}
-	// notifyLock protects 'notify'.
+	// notify  在收到确认信息后，需要解决的回应
+	notify     map[*verifyFuture]struct{}
 	notifyLock sync.Mutex
 
-	// stepDown is used to indicate to the leader that we
-	// should step down based on information from a follower.
+	// stepDown 是用来向leader表明，我们应该根据follower的信息下台。
 	stepDown chan struct{}
 
-	// allowPipeline is used to determine when to pipeline the AppendEntries RPCs.
-	// It is private to this replication goroutine.
+	// allowPipeline 用来决定何时对AppendEntries RPC进行流水线处理。它对这个复制程序来说是私有的。
 	allowPipeline bool
 }
 
@@ -120,17 +98,16 @@ func (s *followerReplication) LastContact() time.Time {
 	return last
 }
 
-// setLastContact sets the last contact to the current time.
+// setLastContact 设置与follower最新的通信时间
 func (s *followerReplication) setLastContact() {
 	s.lastContactLock.Lock()
 	s.lastContact = time.Now()
 	s.lastContactLock.Unlock()
 }
 
-// replicate is a long running routine that replicates log entries to a single
-// follower.
+// replicate goroutine长期运行，它将日志条目复制到一个特定的follower。
 func (r *Raft) replicate(s *followerReplication) {
-	// Start an async heartbeating routing
+	// 开启异步心跳请求
 	stopHeartbeat := make(chan struct{})
 	defer close(stopHeartbeat)
 	r.goFunc(func() { r.heartbeat(s, stopHeartbeat) })
@@ -366,22 +343,19 @@ func (r *Raft) sendLatestSnapshot(s *followerReplication) (bool, error) {
 	return false, nil
 }
 
-// heartbeat is used to periodically invoke AppendEntries on a peer
-// to ensure they don't time out. This is done async of replicate(),
-// since that routine could potentially be blocked on disk IO.
+// heartbeat 用于定期调用对等体上的AppendEntries，以确保它们不会超时。这是与replicate()异步进行的，因为该例程有可能在磁盘IO上被阻塞。
 func (r *Raft) heartbeat(s *followerReplication, stopCh chan struct{}) {
 	var failures uint64
 	req := AppendEntriesRequest{
-		RPCHeader: r.getRPCHeader(),
-		Term:      s.currentTerm,
-		Leader:    r.trans.EncodePeer(r.localID, r.localAddr),
+		RPCHeader: r.getRPCHeader(),                           // 当前协议版本
+		Term:      s.currentTerm,                              // leader 任期
+		Leader:    r.trans.EncodePeer(r.localID, r.localAddr), // 这里就是把localAddr string  变成了[]byte
 	}
 	var resp AppendEntriesResponse
 	for {
-		// Wait for the next heartbeat interval or forced notify
 		select {
-		case <-s.notifyCh:
-		case <-randomTimeout(r.config().HeartbeatTimeout / 10):
+		case <-s.notifyCh: // 心跳主动通知
+		case <-randomTimeout(r.config().HeartbeatTimeout / 10): //定时
 		case <-stopCh:
 			return
 		}
@@ -389,7 +363,7 @@ func (r *Raft) heartbeat(s *followerReplication, stopCh chan struct{}) {
 		s.peerLock.RLock()
 		peer := s.peer
 		s.peerLock.RUnlock()
-
+		// 发送追加日志请求
 		if err := r.trans.AppendEntries(peer.ID, peer.Address, &req, &resp); err != nil {
 			r.logger.Error("failed to heartbeat to", "peer", peer.Address, "error", err)
 			r.observe(FailedHeartbeatObservation{PeerID: peer.ID, LastContact: s.LastContact()})
@@ -416,7 +390,7 @@ func (r *Raft) heartbeat(s *followerReplication, stopCh chan struct{}) {
 // back to the standard replication which can handle more complex situations.
 func (r *Raft) pipelineReplicate(s *followerReplication) error {
 	s.peerLock.RLock()
-	peer := s.peer // flower节点
+	peer := s.peer // follower节点
 	s.peerLock.RUnlock()
 
 	// Create a new pipeline
@@ -427,8 +401,8 @@ func (r *Raft) pipelineReplicate(s *followerReplication) error {
 	defer pipeline.Close()
 
 	// 记录管道的启动和停止
-	r.logger.Info("流水线复制", "flower node", peer)
-	defer r.logger.Info("中止流水线复制", "flower node", peer)
+	r.logger.Info("流水线复制", "follower node", peer)
+	defer r.logger.Info("中止流水线复制", "follower node", peer)
 
 	// 创建停止、结束 channel
 	stopCh := make(chan struct{})

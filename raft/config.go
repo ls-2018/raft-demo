@@ -115,7 +115,7 @@ type Config struct {
 
 	// HeartbeatTimeout 指定在没有领导者的情况下处于跟随者状态的时间
 	// 在我们试图进行选举之前，处于没有领导者的追随者状态的时间。
-	// flower <> candidate <> leader
+	// follower <> candidate <> leader
 	HeartbeatTimeout time.Duration
 
 	// ElectionTimeout 规定了在我们试图进行选举之后，没有领导者的候选时间。
@@ -124,7 +124,7 @@ type Config struct {
 	// CommitTimeout 控制在我们心跳之前没有Apply()操作的时间，以确保及时提交。由于随机交错，可能会延迟到这个值的2倍之多。
 	CommitTimeout time.Duration
 
-	// MaxAppendEntries 控制一次性发送的最大追加日志数。我们想在效率和避免浪费之间取得平衡，如果flower要因为不一致的日志而拒绝的话。
+	// MaxAppendEntries 控制一次性发送的最大追加日志数。我们想在效率和避免浪费之间取得平衡，如果follower要因为不一致的日志而拒绝的话。
 	MaxAppendEntries int
 
 	// BatchApplyCh 表示我们是否应该将applyCh缓冲到MaxAppendEntries大小。
@@ -191,7 +191,7 @@ type Config struct {
 // 我们选择重复字段，而不是嵌入或接受一个Config，但只使用特定的字段来保持API的清晰。
 // 重新配置一些字段有潜在的危险，所以我们应该只在允许的字段中选择性地启用它。
 type ReloadableConfig struct {
-	// TrailingLogs 控制我们在快照后留下多少日志。这是为了让我们能够快速地在跟flower上重放日志，而不是被迫发送整个快照。
+	// TrailingLogs 控制我们在快照后留下多少日志。这是为了让我们能够快速地在跟follower上重放日志，而不是被迫发送整个快照。
 	// 这里传递的值会在运行时更新设置，一旦下一个快照完成并发生截断，就会生效。
 	TrailingLogs uint64
 
@@ -248,9 +248,9 @@ func ValidateConfig(config *Config) error {
 	if len(config.LocalID) == 0 {
 		return fmt.Errorf("LocalID cannot be empty")
 	}
-	// flower 进入候选的时间间隔
+	// follower 进入候选的时间间隔
 	if config.HeartbeatTimeout < 5*time.Millisecond {
-		return fmt.Errorf("flower 进入候选的时间间隔 is too low")
+		return fmt.Errorf("follower 进入候选的时间间隔 is too low")
 	}
 	// 候选超时
 	if config.ElectionTimeout < 5*time.Millisecond {

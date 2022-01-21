@@ -987,7 +987,7 @@ func (r *Raft) String() string {
 	return fmt.Sprintf("Node at %s [%v]", r.localAddr, r.getState())
 }
 
-// LastContact 返回与leader最后一次通信的时间。这只有在我们目前是flower的情况下才有意义。
+// LastContact 返回与leader最后一次通信的时间。这只有在我们目前是follower的情况下才有意义。
 func (r *Raft) LastContact() time.Time {
 	r.lastContactLock.RLock()
 	last := r.lastContact

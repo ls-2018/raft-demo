@@ -35,14 +35,15 @@ type Transport interface {
 	// AppendEntries requests.
 	AppendEntriesPipeline(id ServerID, target ServerAddress) (AppendPipeline, error)
 
-	// AppendEntries sends the appropriate RPC to the target node.
+	// AppendEntries 追加日志请求  raft/raft.go:1198
 	AppendEntries(id ServerID, target ServerAddress, args *AppendEntriesRequest, resp *AppendEntriesResponse) error
 
-	// RequestVote 发送投票请求到目标节点
+	// RequestVote 发送投票请求到目标节点 raft/raft.go:1201
 	RequestVote(id ServerID, target ServerAddress, args *RequestVoteRequest, resp *RequestVoteResponse) error
 
 	// InstallSnapshot is used to push a snapshot down to a follower. The data is read from
 	// the ReadCloser and streamed to the client.
+	// raft/raft.go:1203
 	InstallSnapshot(id ServerID, target ServerAddress, args *InstallSnapshotRequest, resp *InstallSnapshotResponse, data io.Reader) error
 
 	// EncodePeer 是用来序列化一个节点的地址。

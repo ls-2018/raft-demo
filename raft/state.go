@@ -128,8 +128,7 @@ func (r *raftState) setLastApplied(index uint64) {
 	atomic.StoreUint64(&r.lastApplied, index)
 }
 
-// Start a goroutine and properly handle the race between a routine
-// starting and incrementing, and exiting and decrementing.
+// 启动一个goroutine，并正确处理goroutine启动和增量，以及退出和减量之间的竞赛。
 func (r *raftState) goFunc(f func()) {
 	r.routinesGroup.Add(1)
 	go func() {

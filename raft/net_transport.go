@@ -28,10 +28,10 @@ const (
 	// AppendEntries RPC calls.
 	rpcMaxPipeline = 128
 
-	// connReceiveBufferSize 是我们将用于接收RPC请求数据的缓冲区的大小， ->flower。
+	// connReceiveBufferSize 是我们将用于接收RPC请求数据的缓冲区的大小， ->follower。
 	connReceiveBufferSize = 256 * 1024 // 256KB
 
-	// connSendBufferSize 是我们将用于发送RPC请求数据的缓冲区的大小，从leader到flower。
+	// connSendBufferSize 是我们将用于发送RPC请求数据的缓冲区的大小，从leader到follower。
 	connSendBufferSize = 256 * 1024 // 256KB
 )
 
@@ -362,7 +362,7 @@ func (n *NetworkTransport) AppendEntriesPipeline(id ServerID, target ServerAddre
 	return newNetPipeline(n, conn), nil
 }
 
-// AppendEntries implements the Transport interface.
+// AppendEntries 追加日志请求
 func (n *NetworkTransport) AppendEntries(id ServerID, target ServerAddress, args *AppendEntriesRequest, resp *AppendEntriesResponse) error {
 	return n.genericRPC(id, target, rpcAppendEntries, args, resp)
 }
