@@ -31,8 +31,7 @@ type Transport interface {
 	// LocalAddr is used to return our local address to distinguish from our peers.
 	LocalAddr() ServerAddress
 
-	// AppendEntriesPipeline returns an interface that can be used to pipeline
-	// AppendEntries requests.
+	// AppendEntriesPipeline  批量AppendEntries接口
 	AppendEntriesPipeline(id ServerID, target ServerAddress) (AppendPipeline, error)
 
 	// AppendEntries 追加日志请求  raft/rpc_call.go:55

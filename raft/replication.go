@@ -66,9 +66,7 @@ type followerReplication struct {
 	allowPipeline bool
 }
 
-// notifyAll is used to notify all the waiting verify futures
-// if the follower believes we are still the leader.
-// 是用来通知所有等待中的verifyFuture。如果追随者认为我们仍然是领导者。
+// notifyAll 是用来通知所有等待中的verifyFuture。如果Follower认为我们仍然是领导者。
 func (s *followerReplication) notifyAll(leader bool) {
 	// 清除等待通知，尽量减少锁定时间
 	s.notifyLock.Lock()
@@ -110,8 +108,9 @@ func (r *Raft) replicate(s *followerReplication) {
 	// 开启异步心跳请求
 	stopHeartbeat := make(chan struct{})
 	defer close(stopHeartbeat)
-	r.goFunc(func() { r.heartbeat(s, stopHeartbeat) })
+	r.goFunc(func() { r.heartbeat(s, stopHeartbeat) }) // 心跳检测
 
+	//	 以下是日志复制
 RPC:
 	shouldStop := false // 应该停止
 	for !shouldStop {
@@ -131,6 +130,7 @@ RPC:
 				deferErr.respond(fmt.Errorf("replication failed"))
 			}
 		case <-s.triggerCh: // 有新的日志产生
+			_ = r.dispatchLogs
 			// 获取当前日志库的最新索引
 			lastLogIdx, _ := r.getLastLog() // 之前存储了一条Type:LogConfiguration数据  ----> 1
 			shouldStop = r.replicateTo(s, lastLogIdx)
@@ -369,27 +369,25 @@ func (r *Raft) heartbeat(s *followerReplication, stopCh chan struct{}) {
 			case <-stopCh:
 			}
 		} else {
+			r.Ph(&req, &resp)
 			if failures > 0 {
 				r.observe(ResumedHeartbeatObservation{PeerID: peer.ID})
 			}
 			s.setLastContact()
 			failures = 0
-			// Duplicated information. Kept for backward compatibility.
+			// 重复的信息。保留是为了向后兼容。
 			s.notifyAll(resp.Success)
 		}
 	}
 }
 
-// pipelineReplicate is used when we have synchronized our state with the follower,
-// and want to switch to a higher performance pipeline mode of replication.
-// We only pipeline AppendEntries commands, and if we ever hit an error, we fall
-// back to the standard replication which can handle more complex situations.
+// pipelineReplicate
+// 是在我们已经与Follower同步了我们的状态，并且想切换到更高性能的管道复制模式时使用的。
+// 我们只对AppendEntries命令进行流水线处理，如果我们遇到错误，我们就回到标准的复制模式，这样可以处理更复杂的情况。
 func (r *Raft) pipelineReplicate(s *followerReplication) error {
 	s.peerLock.RLock()
 	peer := s.peer // follower节点
 	s.peerLock.RUnlock()
-
-	// Create a new pipeline
 	pipeline, err := r.trans.AppendEntriesPipeline(peer.ID, peer.Address)
 	if err != nil {
 		return err
@@ -575,11 +573,34 @@ func (r *Raft) handleStaleTerm(s *followerReplication) {
 func updateLastAppended(s *followerReplication, req *AppendEntriesRequest) {
 	// Mark any inflight logs as committed
 	// 将任何机上记录标记为已提交
-	if logs := req.Entries; len(logs) > 0 {
+	logs := req.Entries
+	if len(logs) > 0 {
 		last := logs[len(logs)-1]
 		atomic.StoreUint64(&s.nextIndex, last.Index+1)
 		s.commitment.match(s.peer.ID, last.Index)
 	}
 	// 通知所有Future，依然是leader
 	s.notifyAll(true)
+}
+
+func (r *Raft) Ph(req *AppendEntriesRequest, resp *AppendEntriesResponse) {
+	type A struct {
+		RPCHeader
+		Term              uint64
+		Leader            string
+		PrevLogEntry      uint64
+		PrevLogTerm       uint64
+		LeaderCommitIndex uint64
+	}
+	a := A{
+		RPCHeader:         req.RPCHeader,
+		Leader:            string(req.Leader),
+		PrevLogEntry:      req.PrevLogEntry,
+		PrevLogTerm:       req.PrevLogTerm,
+		LeaderCommitIndex: req.LeaderCommitIndex,
+		Term:              req.Term,
+	}
+	r.logger.Info("心跳请求", "=:", fmt.Sprintf("%+v", a))
+	r.logger.Info("心跳响应", "=:", fmt.Sprintf("%+v", resp))
+
 }

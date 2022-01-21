@@ -37,16 +37,11 @@ func (r *AppendEntriesRequest) GetRPCHeader() RPCHeader {
 
 type AppendEntriesResponse struct {
 	RPCHeader
-
-	// Newer term if leader is out of date
 	Term uint64
-
-	// Last Log is a hint to help accelerate rebuilding slow nodes
+	// 一个提示，帮助缓慢的节点 加速重建
 	LastLog uint64
-
-	// We may not succeed if we have a conflicting entry
+	// 如果我们有一个冲突的条目，我们可能不会成功
 	Success bool
-
 	// 有些情况下，这个请求没有成功，但没有必要等待/回避下一次尝试。
 	NoRetryBackoff bool
 }

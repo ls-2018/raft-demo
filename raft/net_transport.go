@@ -24,8 +24,7 @@ const (
 	// DefaultTimeoutScale is the default TimeoutScale in a NetworkTransport.
 	DefaultTimeoutScale = 256 * 1024 // 256KB
 
-	// rpcMaxPipeline controls the maximum number of outstanding
-	// AppendEntries RPC calls.
+	// rpcMaxPipeline AppendEntries RPC calls.一次性最大发送数
 	rpcMaxPipeline = 128
 
 	// connReceiveBufferSize 是我们将用于接收RPC请求数据的缓冲区的大小， ->follower。
@@ -349,16 +348,14 @@ func (n *NetworkTransport) returnConn(conn *netConn) {
 	}
 }
 
-// AppendEntriesPipeline returns an interface that can be used to pipeline
-// AppendEntries requests.
+// AppendEntriesPipeline  批量AppendEntries
 func (n *NetworkTransport) AppendEntriesPipeline(id ServerID, target ServerAddress) (AppendPipeline, error) {
-	// Get a connection
 	conn, err := n.getConnFromAddressProvider(id, target)
 	if err != nil {
 		return nil, err
 	}
 
-	// Create the pipeline
+	// 创建管道
 	return newNetPipeline(n, conn), nil
 }
 
@@ -668,8 +665,7 @@ func sendRPC(conn *netConn, rpcType uint8, args interface{}) error {
 	return nil
 }
 
-// newNetPipeline is used to construct a netPipeline from a given
-// transport and connection.
+// newNetPipeline 构建管道
 func newNetPipeline(trans *NetworkTransport, conn *netConn) *netPipeline {
 	n := &netPipeline{
 		conn:         conn,
@@ -682,8 +678,7 @@ func newNetPipeline(trans *NetworkTransport, conn *netConn) *netPipeline {
 	return n
 }
 
-// decodeResponses is a long running routine that decodes the responses
-// sent on the connection.
+// decodeResponses 解析远程调用的响应
 func (n *netPipeline) decodeResponses() {
 	timeout := n.trans.timeout
 	for {

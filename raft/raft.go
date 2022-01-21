@@ -74,8 +74,8 @@ type leaderState struct {
 	leadershipTransferInProgress int32 // 表示领导权转移正在进行中。
 	commitCh                     chan struct{}
 	commitment                   *commitment
-	inflight                     *list.List // 按日志索引顺序排列的logFuture列表
-	replState                    map[ServerID]*followerReplication
+	inflight                     *list.List                        // 按日志索引顺序排列的logFuture列表
+	replState                    map[ServerID]*followerReplication // 逻辑ID：follower
 	notify                       map[*verifyFuture]struct{}
 	stepDown                     chan struct{}
 }
@@ -178,6 +178,7 @@ func (r *Raft) startStopReplication() {
 
 			r.leaderState.replState[server.ID] = s
 			r.goFunc(func() { r.replicate(s) })
+			_ = r.electSelf // 触发一下,第一次也没数据
 			asyncNotifyCh(s.triggerCh)
 			r.observe(PeerObservation{Peer: server, Removed: false})
 		} else if ok {
@@ -377,7 +378,7 @@ func (r *Raft) appendConfigurationEntry(future *configurationChangeFuture) {
 	r.startStopReplication()
 }
 
-// dispatchLog在领导层被调用，以推送日志到磁盘。 标记它 并开始对其进行复制。不会并发调用
+// dispatchLog 在leader层被调用，以推送日志到磁盘。 标记它 并开始对其进行复制。不会并发调用
 func (r *Raft) dispatchLogs(applyLogs []*logFuture) {
 	now := time.Now()
 
@@ -411,7 +412,7 @@ func (r *Raft) dispatchLogs(applyLogs []*logFuture) {
 	}
 	r.leaderState.commitment.match(r.localID, lastIndex)
 
-	// 更新最后的日志，因为它现在已经在磁盘上了   ,并没有commit
+	// 更新最后的日志，它现在已经在磁盘上了,但并没有commit
 	r.setLastLog(lastIndex, term)
 
 	// 将新的日志通知给复制者

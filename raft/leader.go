@@ -89,15 +89,11 @@ func (r *Raft) runLeader() {
 		}
 	}()
 
-	// 对每一个节点启动一个复制 go routine
+	// 对每一个节点启动一个复制 go routine  日志复制、心跳检测
 	r.startStopReplication()
-
-	// Dispatch a no-op log entry first. This gets this leader up to the latest
-	// possible commit index, even in the absence of client commands. This used
-	// to append a configuration entry instead of a noop. However, that permits
-	// an unbounded number of uncommitted configurations in the log. We now
-	// maintain that there exists at most one uncommitted configuration entry in
-	// any log, so we have to do proper no-ops here.
+	// 先分发一个无操作的日志条目。即使在没有客户端命令的情况下，这也会使leader达到最新的可能提交索引。
+	// 这用于追加配置项而不是noop。
+	// 但是，这允许日志中有无数个未提交的配置。现在，我们认为在任何日志中最多只存在一个未提交的配置条目，因此我们必须在这里进行适当的无操作。
 	noop := &logFuture{
 		log: Log{
 			Type: LogNoop,
@@ -107,9 +103,7 @@ func (r *Raft) runLeader() {
 	r.leaderLoop()
 }
 
-//
-// leaderLoop is the hot loop for a leader. It is invoked
-// after all the various leader setup is done.
+// leaderLoop 它在所有不同的leader设置完成后被调用。
 func (r *Raft) leaderLoop() {
 	// stepDown is used to track if there is an inflight log that
 	// would cause us to lose leadership (specifically a RemovePeer of
@@ -117,6 +111,8 @@ func (r *Raft) leaderLoop() {
 	// be processed in parallel, otherwise we are basing commit on
 	// only a single peer (ourself) and replicating to an undefined set
 	// of peers.
+	// stepDown用来追踪是否有飞行日志会导致我们失去领导能力(特别是我们自己的一个RemovePeer)。
+	// 如果是这种情况，我们不能允许任何日志并行处理，否则我们将只基于单个对等体(我们自己)提交，并复制到一组未定义的对等体。
 	stepDown := false
 	// This is only used for the first lease check, we reload lease below
 	// based on the current config value.
@@ -255,7 +251,7 @@ func (r *Raft) leaderLoop() {
 
 		case v := <-r.verifyCh:
 			if v.quorumSize == 0 {
-				// Just dispatched, start the verification
+				// 刚发送，开始核查
 				r.verifyLeader(v)
 
 			} else if v.votes < v.quorumSize {
@@ -366,7 +362,7 @@ func (r *Raft) verifyLeader(v *verifyFuture) {
 		return
 	}
 
-	// Track this request
+	// 追踪请求
 	v.notifyCh = r.verifyCh
 	r.leaderState.notify[v] = struct{}{}
 

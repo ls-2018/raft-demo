@@ -118,7 +118,7 @@ func (r *Raft) electSelf() <-chan *voteResult {
 		if server.Suffrage == Voter {
 			if server.ID == r.localID {
 				// 自己
-				// 坚持为自己投票,写db   任期、候选者
+				// 坚持为自己投票,写db 任期、候选者
 				if err := r.persistVote(req.Term, req.Candidate); err != nil {
 					r.logger.Error("为自己投票失败", "error", err)
 					return nil

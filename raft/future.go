@@ -223,13 +223,12 @@ type restoreFuture struct {
 	ID string
 }
 
-// verifyFuture is used to verify the current node is still
-// the leader. This is to prevent a stale read.
+// verifyFuture   是用来验证当前节点是否仍然是领导者。
 type verifyFuture struct {
 	deferError
 	notifyCh   chan *verifyFuture
-	quorumSize int
-	votes      int
+	quorumSize int // 竞选获胜的数量
+	votes      int // 投票数
 	voteLock   sync.Mutex
 }
 
@@ -269,8 +268,10 @@ func (v *verifyFuture) vote(leader bool) {
 	}
 
 	if leader {
+		// 为自己投票
 		v.votes++
 		if v.votes >= v.quorumSize {
+			fmt.Println("✈️ ✈️ ✈️", v.votes)
 			v.notifyCh <- v
 			v.notifyCh = nil
 		}
