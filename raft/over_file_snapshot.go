@@ -51,7 +51,7 @@ var _ SnapshotStore = &FileSnapshotStore{}
 // FileSnapshotStore 实现了SnapshotStore接口，允许在本地磁盘上制作快照。
 type FileSnapshotStore struct {
 	path   string
-	retain int
+	retain int // 快照数量
 	logger hclog.Logger
 
 	// noSync, 如果为真，则跳过防崩溃的文件fsync api调用。 这是一个私有字段，只在测试中使用。
@@ -119,7 +119,6 @@ func NewFileSnapshotStoreWithLogger(base string, retain int, logger hclog.Logger
 		return nil, fmt.Errorf("无法访问快照路径: %v", err)
 	}
 
-	// Setup the store
 	store := &FileSnapshotStore{
 		path:   path,   // node/raft_1/snapshots
 		retain: retain, // 2
@@ -145,29 +144,50 @@ func NewFileSnapshotStore(base string, retain int, logOutput io.Writer) (*FileSn
 	}))
 }
 
-// testPermissions 试图触碰我们路径中的一个文件，看看它是否有效。
-func (f *FileSnapshotStore) testPermissions() error {
-	path := filepath.Join(f.path, testPath)
-	fh, err := os.Create(path) // node/raft_1/snapshots/permTest
-	if err != nil {
-		return err
-	}
-
-	if err = fh.Close(); err != nil {
-		return err
-	}
-
-	if err = os.Remove(path); err != nil {
-		return err
-	}
-	return nil
-}
-
 // snapshotName 生成快照的名称
 func snapshotName(term, index uint64) string {
 	now := time.Now()
 	msec := now.UnixNano() / int64(time.Millisecond)
 	return fmt.Sprintf("%d-%d-%d", term, index, msec)
+}
+
+// List 返回存储的可用快照。
+func (f *FileSnapshotStore) List() ([]*SnapshotMeta, error) {
+	// 获取符合条件的快照
+	snapshots, err := f.getSnapshots()
+	if err != nil {
+		f.logger.Error("failed to get snapshots", "error", err)
+		return nil, err
+	}
+
+	var snapMeta []*SnapshotMeta
+	for _, meta := range snapshots {
+		snapMeta = append(snapMeta, &meta.SnapshotMeta)
+		if len(snapMeta) == f.retain {
+			// 如果已经有了规定数量的快照，break
+			break
+		}
+	}
+	return snapMeta, nil
+}
+
+// ReapSnapshots 删除多余的快照
+func (f *FileSnapshotStore) ReapSnapshots() error {
+	snapshots, err := f.getSnapshots()
+	if err != nil {
+		f.logger.Error("获取快照列表失败", "error", err)
+		return err
+	}
+
+	for i := f.retain; i < len(snapshots); i++ {
+		path := filepath.Join(f.path, snapshots[i].ID)
+		f.logger.Info("删除 snapshot", "path", path)
+		if err := os.RemoveAll(path); err != nil {
+			f.logger.Error("删除快照失败", "path", path, "error", err)
+			return err
+		}
+	}
+	return nil
 }
 
 // Create 用于创建新的快照
@@ -227,23 +247,22 @@ func (f *FileSnapshotStore) Create(version SnapshotVersion, index, term uint64,
 	return sink, nil
 }
 
-// List 返回存储的可用快照。
-func (f *FileSnapshotStore) List() ([]*SnapshotMeta, error) {
-	// 获取符合条件的快照
-	snapshots, err := f.getSnapshots()
+// testPermissions 试图获取我们路径中的一个文件，看看它是否有效。
+func (f *FileSnapshotStore) testPermissions() error {
+	path := filepath.Join(f.path, testPath)
+	fh, err := os.Create(path) // node/raft_1/snapshots/permTest
 	if err != nil {
-		f.logger.Error("failed to get snapshots", "error", err)
-		return nil, err
+		return err
 	}
 
-	var snapMeta []*SnapshotMeta
-	for _, meta := range snapshots {
-		snapMeta = append(snapMeta, &meta.SnapshotMeta)
-		if len(snapMeta) == f.retain {
-			break
-		}
+	if err = fh.Close(); err != nil {
+		return err
 	}
-	return snapMeta, nil
+
+	if err = os.Remove(path); err != nil {
+		return err
+	}
+	return nil
 }
 
 // getSnapshots 返回所有已知的快照。
@@ -365,38 +384,35 @@ func (f *FileSnapshotStore) Open(id string) (*SnapshotMeta, io.ReadCloser, error
 	return &meta.SnapshotMeta, buffered, nil
 }
 
-// ReapSnapshots reaps any snapshots beyond the retain count.
-func (f *FileSnapshotStore) ReapSnapshots() error {
-	snapshots, err := f.getSnapshots()
-	if err != nil {
-		f.logger.Error("failed to get snapshots", "error", err)
-		return err
-	}
-
-	for i := f.retain; i < len(snapshots); i++ {
-		path := filepath.Join(f.path, snapshots[i].ID)
-		f.logger.Info("reaping snapshot", "path", path)
-		if err := os.RemoveAll(path); err != nil {
-			f.logger.Error("failed to reap snapshot", "path", path, "error", err)
-			return err
-		}
-	}
-	return nil
-}
-
-// ID returns the ID of the snapshot, can be used with Open()
-// after the snapshot is finalized.
+// ID 返回快照的ID
 func (s *FileSnapshotSink) ID() string {
 	return s.meta.ID
 }
 
-// Write is used to append to the state file. We write to the
-// buffered IO object to reduce the amount of context switches.
+// Write 用于追加到状态文件。我们写入缓冲的IO对象以减少上下文切换的数量。
 func (s *FileSnapshotSink) Write(b []byte) (int, error) {
 	return s.buffered.Write(b)
 }
 
-// Close is used to indicate a successful end.
+// Cancel 表示不成功结束。
+func (s *FileSnapshotSink) Cancel() error {
+	// 确保close是幂等的
+	if s.closed {
+		return nil
+	}
+	s.closed = true
+
+	// 关闭句柄，更新CRC校验值
+	if err := s.finalize(); err != nil {
+		s.logger.Error("快照结束失败", "error", err)
+		return err
+	}
+
+	// 尝试移除保存了的数据【文件夹】
+	return os.RemoveAll(s.dir)
+}
+
+// Close 打快照之后 正常关闭
 func (s *FileSnapshotSink) Close() error {
 	// Make sure close is idempotent
 	if s.closed {
@@ -449,24 +465,6 @@ func (s *FileSnapshotSink) Close() error {
 	return nil
 }
 
-// Cancel 表示不成功结束。
-func (s *FileSnapshotSink) Cancel() error {
-	// 确保close是幂等的
-	if s.closed {
-		return nil
-	}
-	s.closed = true
-
-	// 关闭句柄，更新CRC校验值
-	if err := s.finalize(); err != nil {
-		s.logger.Error("快照结束失败", "error", err)
-		return err
-	}
-
-	// 尝试移除保存了的数据【文件夹】
-	return os.RemoveAll(s.dir)
-}
-
 // finalize 用来关闭我们所有的资源。关闭文件
 func (s *FileSnapshotSink) finalize() error {
 	// 清除所有剩余数据
@@ -500,10 +498,9 @@ func (s *FileSnapshotSink) finalize() error {
 	return nil
 }
 
-// writeMeta is used to write out the metadata we have.
+// writeMeta 写元信息 meta.json
 func (s *FileSnapshotSink) writeMeta() error {
 	var err error
-	// Open the meta file
 	metaPath := filepath.Join(s.dir, metaFilePath)
 	var fh *os.File
 	fh, err = os.Create(metaPath)
@@ -512,10 +509,8 @@ func (s *FileSnapshotSink) writeMeta() error {
 	}
 	defer fh.Close()
 
-	// Buffer the file IO
 	buffered := bufio.NewWriter(fh)
 
-	// Write out as JSON
 	enc := json.NewEncoder(buffered)
 	if err = enc.Encode(&s.meta); err != nil {
 		return err

@@ -197,7 +197,7 @@ func (r *Raft) processConfigurationLogEntry(entry *Log) error {
 		//r.configurations.latestIndex = entry.Index
 		//r.latestConfiguration.Store(DecodeConfiguration(entry.Data).Clone())
 
-	case LogAddPeerDeprecated, LogRemovePeerDeprecated:
+	case LogAddPeerDeprecated:
 		r.setCommittedConfiguration(r.configurations.latest, r.configurations.latestIndex)
 		conf, err := decodePeers(entry.Data, r.trans)
 		if err != nil {

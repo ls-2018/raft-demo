@@ -9,7 +9,6 @@ import (
 	"time"
 )
 
-// Future is used to represent an action that may occur in the future.
 type Future interface {
 	// Error blocks until the future arrives and then returns the error status
 	// of the future. This may be called any number of times - all calls will
@@ -21,17 +20,13 @@ type Future interface {
 	Error() error
 }
 
-// IndexFuture is used for future actions that can result in a raft log entry
-// being created.
+// IndexFuture 用于可能导致创建raft日志条目的将来操作。
 type IndexFuture interface {
 	Future
-
-	// Index holds the index of the newly applied log entry.
-	// This must not be called until after the Error method has returned.
 	Index() uint64
 }
 
-// ApplyFuture is used for Apply and can return the FSM response.
+// ApplyFuture 可以返回FSM的响应。
 type ApplyFuture interface {
 	IndexFuture
 
@@ -43,13 +38,9 @@ type ApplyFuture interface {
 	Response() interface{}
 }
 
-// ConfigurationFuture is used for GetConfiguration and can return the
-// latest configuration in use by Raft.
 type ConfigurationFuture interface {
 	IndexFuture
 
-	// Configuration contains the latest configuration. This must
-	// not be called until after the Error method has returned.
 	Configuration() Configuration
 }
 

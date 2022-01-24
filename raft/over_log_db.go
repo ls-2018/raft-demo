@@ -18,9 +18,7 @@ const (
 	// LogAddPeerDeprecated
 	// 用来添加一个新的node。这应该只用于旧的协议版本，旨在与未版本的Raft服务器兼容。详见config.go中的注释。
 	LogAddPeerDeprecated
-	// LogRemovePeerDeprecated
-	//用来删除一个现有的node。这应该只用于较早的协议版本，旨在与没有版本的Raft服务器兼容。详见config.go中的注释。
-	LogRemovePeerDeprecated
+
 	// LogBarrier 是用来确保所有前面的操作都被应用到FSM中。它类似于LogNoop，但是它不是一旦提交就返回，
 	//而是只在FSM管理器捕获它时返回。否则就有可能存在已提交但尚未应用到FSM的操作。
 	LogBarrier
@@ -39,8 +37,6 @@ func (lt LogType) String() string {
 		return "LogNoop"
 	case LogAddPeerDeprecated:
 		return "LogAddPeerDeprecated"
-	case LogRemovePeerDeprecated:
-		return "LogRemovePeerDeprecated"
 	case LogBarrier:
 		return "LogBarrier"
 	case LogConfiguration:

@@ -121,25 +121,6 @@ func (r *Raft) run() {
 	}
 }
 
-// todo 尝试发送一个初始的集群的初始配置；   只有在跟随者状态下才有意义。
-func (r *Raft) liveBootstrap(configuration Configuration) error {
-	// 使用初始化前API进行静态更新。
-	cfg := r.config()
-	err := BootstrapCluster(&cfg, r.logs, r.stable, r.snapshots, r.trans, configuration)
-	if err != nil {
-		return err
-	}
-
-	// 启用配置。
-	var entry Log
-	if err := r.logs.GetLog(1, &entry); err != nil {
-		panic(err)
-	}
-	r.setCurrentTerm(1)
-	r.setLastLog(entry.Index, entry.Term)
-	return r.processConfigurationLogEntry(&entry)
-}
-
 // startStopReplication 将设置状态并开始向新的follower进行异步复制，并停止向被删除的node进行复制。
 // 在移除一个node之前，它将指示复制程序尝试复制到当前的 索引。这必须只在主线程中调用。
 func (r *Raft) startStopReplication() {
@@ -220,83 +201,12 @@ func (r *Raft) configurationChangeChIfStable() chan *configurationChangeFuture {
 	return nil
 }
 
-// quorumSize 用来返回竞选者一半的大小。 //2 + 1
-func (r *Raft) quorumSize() int {
-	voters := 0
-	for _, server := range r.configurations.latest.Servers {
-		if server.Suffrage == Voter {
-			voters++
-		}
-	}
-	return voters/2 + 1
-}
-
-// restoreUserSnapshot 重新存储一个快照，并将数据存储到FSM
-func (r *Raft) restoreUserSnapshot(meta *SnapshotMeta, reader io.Reader) error {
-	version := meta.Version
-	if version < SnapshotVersionMin || version > SnapshotVersionMax {
-		return fmt.Errorf("快照版本不支持 %d", version)
-	}
-
-	// 当配置更改未完成时，我们不支持快照，因为快照没有表示这种状态的方法。
-	committedIndex := r.configurations.committedIndex
-	latestIndex := r.configurations.latestIndex
-	if committedIndex != latestIndex {
-		return fmt.Errorf("无法恢复快照, 等待配置项更新 【latestIndex:%v】[committedIndex:%v]", latestIndex, committedIndex)
-	}
-
-	// 取消所有未提交的请求
-	for {
-		e := r.leaderState.inflight.Front()
-		if e == nil {
-			break
-		}
-		e.Value.(*logFuture).respond(ErrAbortedByRestore)
-		r.leaderState.inflight.Remove(e)
-	}
-	term := r.getCurrentTerm()
-	lastIndex := r.getLastIndex()
-	if meta.Index > lastIndex {
-		lastIndex = meta.Index
-	}
-	lastIndex++
-	sink, err := r.snapshots.Create(version, lastIndex, term, r.configurations.latest, r.configurations.latestIndex, r.trans)
-	if err != nil {
-		return fmt.Errorf("创建快照失败: %v", err)
-	}
-	n, err := io.Copy(sink, reader)
-	if err != nil {
-		sink.Cancel()
-		return fmt.Errorf("写快照失败: %v", err)
-	}
-	if n != meta.Size {
-		sink.Cancel()
-		return fmt.Errorf("写快照失败, size didn't match (%d != %d)", n, meta.Size)
-	}
-	if err := sink.Close(); err != nil {
-		return fmt.Errorf("关闭快照失败: %v", err)
-	}
-	r.logger.Info("拷贝数据到本地快照", "bytes", n)
-
-	// 恢复快照到FSM如果失败了，我们就会处于一个糟糕的状态，所以我们会恐慌地把自己干掉。
-	// 将数据保存到了快照，然后更新到用户的FSM
-	fsm := &restoreFuture{ID: sink.ID()}
-	fsm.ShutdownCh = r.shutdownCh
-	fsm.init()
-	select {
-	case r.fsmMutateCh <- fsm:
-	case <-r.shutdownCh:
-		return ErrRaftShutdown
-	}
-	if err := fsm.Error(); err != nil {
-		panic(fmt.Errorf("重新存储用户快照失败: %v", err))
-	}
-	r.setLastLog(lastIndex, term)
-	r.setLastApplied(lastIndex)
-	r.setLastSnapshot(lastIndex, term)
-
-	r.logger.Info("重新存储 snapshot", "index", latestIndex)
-	return nil
+// timeoutNow 当leader收到一个超时信号
+func (r *Raft) timeoutNow(rpc RPC, req *TimeoutNowRequest) {
+	r.setLeader("")
+	r.setState(Candidate)
+	r.candidateFromLeadershipTransfer = true
+	rpc.Respond(&TimeoutNowResponse{}, nil)
 }
 
 // pickServer returns the follower that is most up to date and participating in quorum.
@@ -345,16 +255,10 @@ func (r *Raft) appendConfigurationEntry(future *configurationChangeFuture) {
 	// similarly on old Raft servers, but remove peer does extra checks to
 	// see if a leader needs to step down. Since they both assert the full
 	// configuration, then we can safely call remove peer for everything.
-	if r.protocolVersion < 2 {
-		future.log = Log{
-			Type: LogRemovePeerDeprecated,
-			Data: encodePeers(configuration, r.trans),
-		}
-	} else {
-		future.log = Log{
-			Type: LogConfiguration,
-			Data: EncodeConfiguration(configuration),
-		}
+
+	future.log = Log{
+		Type: LogConfiguration,
+		Data: EncodeConfiguration(configuration),
 	}
 
 	r.dispatchLogs([]*logFuture{&future.logFuture})
@@ -492,7 +396,6 @@ func (r *Raft) prepareLog(l *Log, future *logFuture) *commitTuple {
 			return &commitTuple{l, future}
 		}
 	case LogAddPeerDeprecated:
-	case LogRemovePeerDeprecated:
 	case LogNoop:
 		// Ignore the no-op
 
@@ -503,16 +406,103 @@ func (r *Raft) prepareLog(l *Log, future *logFuture) *commitTuple {
 	return nil
 }
 
-// setLastContact 设置上一次与其他节点通信的时间
-func (r *Raft) setLastContact() {
-	r.lastContactLock.Lock()
-	r.lastContact = time.Now()
-	r.lastContactLock.Unlock()
+// ------------------------------------ over ------------------------------------
+// 尝试设置一个初始的集群的初始配置；   只有在跟随者状态下才有意义。
+func (r *Raft) liveBootstrap(configuration Configuration) error {
+	// 使用初始化前API进行静态更新。
+	cfg := r.config()
+	err := BootstrapCluster(&cfg, r.logs, r.stable, r.snapshots, r.trans, configuration) // 只是往log db 追加了配置项
+	if err != nil {
+		return err
+	}
+
+	// 启用配置。
+	var entry Log
+	if err := r.logs.GetLog(1, &entry); err != nil {
+		panic(err)
+	}
+	r.setCurrentTerm(1)
+	r.setLastLog(entry.Index, entry.Term)
+	return r.processConfigurationLogEntry(&entry)
 }
 
-type voteResult struct {
-	RequestVoteResponse
-	voterID ServerID // 选民的逻辑ID
+// quorumSize 用来返回竞选者一半的大小。 //2 + 1
+func (r *Raft) quorumSize() int {
+	voters := 0
+	for _, server := range r.configurations.latest.Servers {
+		if server.Suffrage == Voter {
+			voters++
+		}
+	}
+	return voters/2 + 1
+}
+
+// restoreUserSnapshot 重新存储一个快照，并将数据存储到FSM
+func (r *Raft) restoreUserSnapshot(meta *SnapshotMeta, reader io.Reader) error {
+	version := meta.Version
+	if version < SnapshotVersionMin || version > SnapshotVersionMax {
+		return fmt.Errorf("快照版本不支持 %d", version)
+	}
+
+	// 当配置更改未完成时，我们不支持快照，因为快照没有表示这种状态的方法。
+	committedIndex := r.configurations.committedIndex
+	latestIndex := r.configurations.latestIndex
+	if committedIndex != latestIndex {
+		return fmt.Errorf("无法恢复快照, 等待配置项更新 【latestIndex:%v】[committedIndex:%v]", latestIndex, committedIndex)
+	}
+
+	// 取消所有未提交的请求
+	for {
+		e := r.leaderState.inflight.Front()
+		if e == nil {
+			break
+		}
+		e.Value.(*logFuture).respond(ErrAbortedByRestore)
+		r.leaderState.inflight.Remove(e)
+	}
+	term := r.getCurrentTerm()
+	lastIndex := r.getLastIndex()
+	if meta.Index > lastIndex {
+		lastIndex = meta.Index
+	}
+	lastIndex++
+	sink, err := r.snapshots.Create(version, lastIndex, term, r.configurations.latest, r.configurations.latestIndex, r.trans)
+	if err != nil {
+		return fmt.Errorf("创建快照失败: %v", err)
+	}
+	n, err := io.Copy(sink, reader)
+	if err != nil {
+		sink.Cancel()
+		return fmt.Errorf("写快照失败: %v", err)
+	}
+	if n != meta.Size {
+		sink.Cancel()
+		return fmt.Errorf("写快照失败, size didn't match (%d != %d)", n, meta.Size)
+	}
+	if err := sink.Close(); err != nil {
+		return fmt.Errorf("关闭快照失败: %v", err)
+	}
+	r.logger.Info("拷贝数据到本地快照", "bytes", n)
+
+	// 恢复快照到FSM如果失败了，我们就会处于一个糟糕的状态，所以我们会恐慌地把自己干掉。
+	// 将数据保存到了快照，然后更新到用户的FSM
+	fsm := &restoreFuture{ID: sink.ID()}
+	fsm.ShutdownCh = r.shutdownCh
+	fsm.init()
+	select {
+	case r.fsmMutateCh <- fsm:
+	case <-r.shutdownCh:
+		return ErrRaftShutdown
+	}
+	if err := fsm.Error(); err != nil {
+		panic(fmt.Errorf("重新存储用户快照失败: %v", err))
+	}
+	r.setLastLog(lastIndex, term)
+	r.setLastApplied(lastIndex)
+	r.setLastSnapshot(lastIndex, term)
+
+	r.logger.Info("重新存储 snapshot", "index", latestIndex)
+	return nil
 }
 
 // persistVote 用来确保安全的投票,写db      任期、竞选者
@@ -541,14 +531,6 @@ func (r *Raft) setState(state RaftState) {
 	r.raftState.setState(state)
 }
 
-// timeoutNow 当leader收到一个超时信号
-func (r *Raft) timeoutNow(rpc RPC, req *TimeoutNowRequest) {
-	r.setLeader("")
-	r.setState(Candidate)
-	r.candidateFromLeadershipTransfer = true
-	rpc.Respond(&TimeoutNowResponse{}, nil)
-}
-
 // setLatestConfiguration 储存最新的配置并更新其副本。
 func (r *Raft) setLatestConfiguration(c Configuration, i uint64) {
 	r.configurations.latest = c
@@ -570,4 +552,11 @@ func (r *Raft) getLatestConfiguration() Configuration {
 	default:
 		return Configuration{}
 	}
+}
+
+// setLastContact 设置上一次与其他节点通信的时间
+func (r *Raft) setLastContact() {
+	r.lastContactLock.Lock()
+	r.lastContact = time.Now()
+	r.lastContactLock.Unlock()
 }

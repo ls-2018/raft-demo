@@ -1,5 +1,10 @@
 package raft
 
+type voteResult struct {
+	RequestVoteResponse
+	voterID ServerID // 选民的逻辑ID
+}
+
 // runCandidate 为一个candidate运行FSM
 func (r *Raft) runCandidate() {
 
@@ -66,7 +71,6 @@ func (r *Raft) runCandidate() {
 		case c := <-r.configurationsCh: // runCandidate
 			c.configurations = r.configurations.Clone()
 			c.respond(nil)
-
 
 		case <-electionTimer: // runCandidate
 			r.logger.Warn("选举已超时，重新开始选举")

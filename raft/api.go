@@ -54,8 +54,7 @@ var (
 	// that's not supported by the current protocol version.
 	ErrUnsupportedProtocol = errors.New("operation not supported with current protocol version")
 
-	// ErrCantBootstrap is returned when attempt is made to bootstrap a
-	// cluster that already has state present.
+	// ErrCantBootstrap 当尝试引导一个已经有状态的集群时返回。
 	ErrCantBootstrap = errors.New("bootstrap only works on new clusters")
 
 	// ErrLeadershipTransferInProgress 当领导因试图转移领导而拒绝客户请求时返回。
@@ -177,31 +176,27 @@ func BootstrapCluster(conf *Config, logs LogStore, stable StableStore, snaps Sna
 	// 确保集群有一个干净的状态
 	hasState, err := HasExistingState(logs, stable, snaps)
 	if err != nil {
-		return fmt.Errorf("failed to check for existing state: %v", err)
+		return fmt.Errorf("检查已有状态失败: %v", err)
 	}
 	if hasState {
 		return ErrCantBootstrap
 	}
-
-	// Set current term to 1.
+	// 以下是集群初始化的时候需要写点数据
+	// 设置当前任期为1
 	if err := stable.SetUint64(keyCurrentTerm, 1); err != nil {
 		return fmt.Errorf("failed to save current term: %v", err)
 	}
 
-	// Append configuration entry to log.
+	// 追加配置项
 	entry := &Log{
 		Index: 1,
 		Term:  1,
 	}
-	if conf.ProtocolVersion < 3 {
-		entry.Type = LogRemovePeerDeprecated
-		entry.Data = encodePeers(configuration, trans)
-	} else {
-		entry.Type = LogConfiguration
-		entry.Data = EncodeConfiguration(configuration)
-	}
+	entry.Type = LogConfiguration
+	entry.Data = EncodeConfiguration(configuration)
+
 	if err := logs.StoreLog(entry); err != nil {
-		return fmt.Errorf("failed to append configuration entry to log: %v", err)
+		return fmt.Errorf("追加配置项失败: %v", err)
 	}
 
 	return nil
@@ -230,7 +225,7 @@ func HasExistingState(logs LogStore, stable StableStore, snaps SnapshotStore) (b
 		return true, nil
 	}
 
-	// Make sure we have no snapshots
+	// 确保没有快照
 	snapshots, err := snaps.List()
 	if err != nil {
 		return false, fmt.Errorf("failed to list snapshots: %v", err)

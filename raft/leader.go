@@ -340,7 +340,7 @@ func (r *Raft) verifyLeader(v *verifyFuture) {
 	v.notifyCh = r.verifyCh
 	r.leaderState.notify[v] = struct{}{}
 
-	// Trigger immediate heartbeats
+	// 立即引发心跳
 	for _, repl := range r.leaderState.replState {
 		repl.notifyLock.Lock()
 		repl.notify[v] = struct{}{}
