@@ -145,7 +145,7 @@ func DefaultConfig() *Config {
 		TrailingLogs:       10240,
 		SnapshotInterval:   120 * time.Second,
 		SnapshotThreshold:  8192,
-		LeaderLeaseTimeout: 500 * time.Millisecond, //50ms  租约超时
+		LeaderLeaseTimeout: 500 * time.Millisecond, //500ms  租约超时
 		LogLevel:           "DEBUG",
 	}
 }

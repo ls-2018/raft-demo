@@ -1,9 +1,11 @@
 package raft
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"sync"
+	"testing"
 	"time"
 )
 
@@ -300,4 +302,16 @@ func (a *appendFuture) Request() *AppendEntriesRequest {
 
 func (a *appendFuture) Response() *AppendEntriesResponse {
 	return a.resp
+}
+func TestDeferFutureError(t *testing.T) {
+	want := errors.New("x")
+	var f deferError
+	f.init()
+	f.respond(want)
+	if got := f.Error(); got != want {
+		t.Fatalf("unexpected error result; got %#v want %#v", got, want)
+	}
+	if got := f.Error(); got != want {
+		t.Fatalf("unexpected error result; got %#v want %#v", got, want)
+	}
 }

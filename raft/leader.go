@@ -118,17 +118,17 @@ func (r *Raft) leaderLoop() {
 		case <-r.leaderState.stepDown:
 			r.setState(Follower)
 
-		case future := <-r.leadershipTransferCh:
+		case future := <-r.leadershipTransferCh: // runLeader
 			if r.getLeadershipTransferInProgress() {
+				// 如果已经在转移中了
 				r.logger.Debug(ErrLeadershipTransferInProgress.Error())
 				future.respond(ErrLeadershipTransferInProgress)
 				continue
 			}
 
-			r.logger.Debug("starting leadership transfer", "id", future.ID, "address", future.Address)
+			r.logger.Debug("leader开始转移到", "id", future.ID, "address", future.Address)
 
-			// When we are leaving leaderLoop, we are no longer
-			// leader, so we should stop transferring.
+			// 当离开 leaderLoop,不再是leader, 需要关闭leftLeaderLoop
 			leftLeaderLoop := make(chan struct{})
 			defer func() { close(leftLeaderLoop) }()
 
@@ -426,18 +426,13 @@ func (r *Raft) setupLeaderState() {
 	r.leaderState.stepDown = make(chan struct{}, 1)
 }
 
-// checkLeaderLease is used to check if we can contact a quorum of nodes
-// within the last leader lease interval. If not, we need to step down,
-// as we may have lost connectivity. Returns the maximum duration without
-// contact. This must only be called from the main thread.
+// checkLeaderLease 检查是否仍与大多数通信在规定时间内;返回没有通信的最长时间。
 func (r *Raft) checkLeaderLease() time.Duration {
-	// Track contacted nodes, we can always contact ourself
+	// 跟踪可以通信的节点，包括自己
 	contacted := 0
 
-	// Store lease timeout for this one check invocation as we need to refer to it
-	// in the loop and would be confusing if it ever becomes reloadable and
-	// changes between iterations below.
-	leaseTimeout := r.config().LeaderLeaseTimeout
+	// 存储这个检查调用的租约超时，因为我们需要在循环中引用它，如果它变成可更改的，并在下面的循环之间更改，将会令人困惑。
+	leaseTimeout := r.config().LeaderLeaseTimeout // 500ms
 
 	// Check each follower
 	var maxDiff time.Duration
@@ -466,24 +461,30 @@ func (r *Raft) checkLeaderLease() time.Duration {
 		}
 	}
 
-	// Verify we can contact a quorum
 	quorum := r.quorumSize()
 	if contacted < quorum {
-		r.logger.Warn("failed to contact quorum of nodes, stepping down")
+		r.logger.Warn("无法与大多数节点通信，设置为Follower")
 		r.setState(Follower)
 	}
 	return maxDiff
 }
 
-// initiateLeadershipTransfer starts the leadership on the leader side, by
-// sending a message to the leadershipTransferCh, to make sure it runs in the
-// mainloop.
+// ------------------------------------ over ------------------------------------
+
+// setLeader 是用来修改集群的当前领导者的
+func (r *Raft) setLeader(leader ServerAddress) {
+	r.leaderLock.Lock()
+	r.leader = leader
+	r.leaderLock.Unlock()
+}
+
+// initiateLeadershipTransfer  初始化leader转移到 id 的事件，等待未来返回结果
 func (r *Raft) initiateLeadershipTransfer(id *ServerID, address *ServerAddress) LeadershipTransferFuture {
 	future := &leadershipTransferFuture{ID: id, Address: address}
 	future.init()
 
 	if id != nil && *id == r.localID {
-		err := fmt.Errorf("cannot transfer leadership to itself")
+		err := fmt.Errorf("不能把leader转移到自己身上")
 		r.logger.Info(err.Error())
 		future.respond(err)
 		return future
@@ -498,6 +499,8 @@ func (r *Raft) initiateLeadershipTransfer(id *ServerID, address *ServerAddress) 
 		return errorFuture{ErrEnqueueTimeout}
 	}
 }
+
+// OK
 func (r *Raft) setLeadershipTransferInProgress(v bool) {
 	if v {
 		atomic.StoreInt32(&r.leaderState.leadershipTransferInProgress, 1)
@@ -506,14 +509,8 @@ func (r *Raft) setLeadershipTransferInProgress(v bool) {
 	}
 }
 
+// OK
 func (r *Raft) getLeadershipTransferInProgress() bool {
 	v := atomic.LoadInt32(&r.leaderState.leadershipTransferInProgress)
 	return v == 1
-}
-
-// setLeader 是用来修改集群的当前领导者的
-func (r *Raft) setLeader(leader ServerAddress) {
-	r.leaderLock.Lock()
-	r.leader = leader
-	r.leaderLock.Unlock()
 }

@@ -164,9 +164,12 @@ func (r *Raft) runFSM() {
 		case ptr := <-r.fsmMutateCh: // 用来向FSM发送状态变化的更新,恢复快照
 			switch req := ptr.(type) {
 			case []*commitTuple:
+				_ = r.processLogs
 				// 在应用日志时，它接收指向commitTuple结构的指针;
 				commitBatch(req)
 			case *restoreFuture:
+				_ = r.restoreUserSnapshot
+				_ = r.installSnapshot
 				// 在恢复快照时接收指向restoreFuture结构的指针。
 				restore(req)
 			default:

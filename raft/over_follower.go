@@ -14,16 +14,16 @@ func (r *Raft) runFollower() {
 			r.processRPC(rpc)
 		//-----------------------------------
 		// 拒绝任何操作，当不是leader
-		case c := <-r.configurationChangeCh:
-			c.respond(ErrNotLeader)
-		case a := <-r.applyCh:
-			a.respond(ErrNotLeader)
-		case v := <-r.verifyCh:
-			v.respond(ErrNotLeader)
-		case r := <-r.userRestoreCh:
-			r.respond(ErrNotLeader)
-		case r := <-r.leadershipTransferCh:
-			r.respond(ErrNotLeader)
+		//case c := <-r.configurationChangeCh:
+		//	c.respond(ErrNotLeader)
+		//case a := <-r.applyCh:
+		//	a.respond(ErrNotLeader)
+		//case v := <-r.verifyCh:
+		//	v.respond(ErrNotLeader)
+		//case r := <-r.userRestoreCh:
+		//	r.respond(ErrNotLeader)
+		//case r := <-r.leadershipTransferCh:
+		//	r.respond(ErrNotLeader)
 		//-----------------------------------
 		case c := <-r.configurationsCh: // over
 			// 配置获取请求，读取当前配置、然后设置

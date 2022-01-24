@@ -48,15 +48,15 @@ func (r *Raft) runCandidate() {
 			}
 		//-----------------------------------
 		// 拒绝任何操作，当不是leader
-		case c := <-r.configurationChangeCh:
+		case c := <-r.configurationChangeCh: // runCandidate
 			c.respond(ErrNotLeader)
-		case a := <-r.applyCh:
+		case a := <-r.applyCh: // runCandidate
 			a.respond(ErrNotLeader)
-		case v := <-r.verifyCh:
+		case v := <-r.verifyCh: // runCandidate
 			v.respond(ErrNotLeader)
-		case r := <-r.userRestoreCh:
+		case r := <-r.userRestoreCh: // runCandidate
 			r.respond(ErrNotLeader)
-		case r := <-r.leadershipTransferCh:
+		case r := <-r.leadershipTransferCh: // runCandidate
 			r.respond(ErrNotLeader)
 		//-----------------------------------
 		case c := <-r.configurationsCh:
@@ -75,6 +75,7 @@ func (r *Raft) runCandidate() {
 		}
 	}
 }
+
 // electSelf 是用来向所有同伴发送一个RequestVote RPC，并为我们自己投票。
 // 这有一个副作用，就是增加了当前的任期。返回的响应通道被用来等待所有的响应（包括对我们自己的投票）。这必须只在主线程中调用。
 func (r *Raft) electSelf() <-chan *voteResult {

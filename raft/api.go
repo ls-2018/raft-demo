@@ -58,8 +58,7 @@ var (
 	// cluster that already has state present.
 	ErrCantBootstrap = errors.New("bootstrap only works on new clusters")
 
-	// ErrLeadershipTransferInProgress is returned when the leader is rejecting
-	// client requests because it is attempting to transfer leadership.
+	// ErrLeadershipTransferInProgress 当领导因试图转移领导而拒绝客户请求时返回。
 	ErrLeadershipTransferInProgress = errors.New("leadership transfer in progress")
 )
 
@@ -74,11 +73,9 @@ type Raft struct {
 	// applyCh 是用来异步发送日志到主线程，以便被提交并应用到FSM中。
 	applyCh chan *logFuture // raft 节点间同步channel
 
-	// conf 存储当前要使用的配置。这是所提供的最新的配置。所有对配置值的读取都应该使用config()辅助方法来安全读取。
+	// conf 存储当前要使用的配置。这是所提供的最新的配置。
+	// 所有对配置值的读取都应该使用config()辅助方法来安全读取。 按照当前的逻辑来看，在运行中是没有更改的
 	conf atomic.Value
-
-	// confReloadMu 确保同时只有一个工作线程可以重新加载congfig
-	confReloadMu sync.Mutex
 
 	// FSM 客户端状态机应该实现的接口
 	fsm FSM
@@ -158,7 +155,7 @@ type Raft struct {
 	// bootstrapCh 是用来尝试从主线程之外进行初始引导
 	bootstrapCh chan *bootstrapFuture
 
-	// leadershipTransferCh 是用来从主线程之外启动leader转移的。
+	// leadershipTransferCh 是用来从主线程之外启动leader转移监听的。
 	leadershipTransferCh chan *leadershipTransferFuture
 }
 
@@ -539,7 +536,7 @@ func NewRaft(conf *Config, fsm FSM, logs LogStore, stable StableStore, snaps Sna
 	// 启动后台worker
 	r.goFunc(r.run)
 	r.goFunc(r.runFSM)
-	r.goFunc(r.runSnapshots)// 打快照
+	r.goFunc(r.runSnapshots) // 打快照
 	return r, nil
 }
 
@@ -609,34 +606,8 @@ func (r *Raft) config() Config {
 	return r.conf.Load().(Config)
 }
 
-// ReloadConfig updates the configuration of a running raft node. If the new
-// configuration is invalid an error is returned and no changes made to the
-// instance. All fields will be copied from rc into the new configuration, even
-// if they are zero valued.
-func (r *Raft) ReloadConfig(rc ReloadableConfig) error {
-	r.confReloadMu.Lock()
-	defer r.confReloadMu.Unlock()
-
-	// Load the current config (note we are under a lock so it can't be changed
-	// between this read and a later Store).
-	oldCfg := r.config()
-
-	// Set the reloadable fields
-	newCfg := rc.apply(oldCfg)
-
-	if err := ValidateConfig(&newCfg); err != nil {
-		return err
-	}
-	r.conf.Store(newCfg)
-	return nil
-}
-
-// ReloadableConfig returns the current state of the reloadable fields in Raft's
-// configuration. This is useful for programs to discover the current state for
-// reporting to users or tests. It is safe to call from any goroutine. It is
-// intended for reporting and testing purposes primarily; external
-// synchronization would be required to safely use this in a read-modify-write
-// pattern for reloadable configuration options.
+// ReloadableConfig 返回Raft配置中可重载字段的当前状态。这对于程序发现向用户或测试报告的当前状态非常有用。
+// 从任何goroutine调用都是安全的。它主要用于报告和测试目的;对于可重新加载的配置选项，需要外部同步才能以读-修改-写模式安全地使用它。
 func (r *Raft) ReloadableConfig() ReloadableConfig {
 	cfg := r.config()
 	var rc ReloadableConfig
@@ -1084,18 +1055,7 @@ func (r *Raft) AppliedIndex() uint64 {
 	return r.getLastApplied()
 }
 
-// LeadershipTransfer will transfer leadership to a server in the cluster.
-// This can only be called from the leader, or it will fail. The leader will
-// stop accepting client requests, make sure the target server is up to date
-// and starts the transfer with a TimeoutNow message. This message has the same
-// effect as if the election timeout on the on the target server fires. Since
-// it is unlikely that another server is starting an election, it is very
-// likely that the target server is able to win the election.  Note that raft
-// protocol version 3 is not sufficient to use LeadershipTransfer. A recent
-// version of that library has to be used that includes this feature.  Using
-// transfer leadership is safe however in a cluster where not every node has
-// the latest version. If a follower cannot be promoted, it will fail
-// gracefully.
+// LeadershipTransfer 对用户暴露的leader转移
 func (r *Raft) LeadershipTransfer() Future {
 	if r.protocolVersion < 3 {
 		return errorFuture{ErrUnsupportedProtocol}
