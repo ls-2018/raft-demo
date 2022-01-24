@@ -159,11 +159,6 @@ type Raft struct {
 	// bootstrapCh 是用来尝试从主线程之外进行初始引导
 	bootstrapCh chan *bootstrapFuture
 
-	// List of observers and the mutex that protects them. The observers list
-	// is indexed by an artificial ID which is used for deregistration.
-	observersLock sync.RWMutex
-	observers     map[uint64]*Observer
-
 	// leadershipTransferCh 是用来从主线程之外启动leader转移的。
 	leadershipTransferCh chan *leadershipTransferFuture
 }
@@ -501,7 +496,6 @@ func NewRaft(conf *Config, fsm FSM, logs LogStore, stable StableStore, snaps Sna
 		verifyCh:              make(chan *verifyFuture, 64), // 校验自己是不是leader
 		configurationsCh:      make(chan *configurationsFuture, 8),
 		bootstrapCh:           make(chan *bootstrapFuture),
-		observers:             make(map[uint64]*Observer),
 		leadershipTransferCh:  make(chan *leadershipTransferFuture, 1),
 	}
 
