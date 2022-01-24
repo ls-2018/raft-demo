@@ -133,8 +133,7 @@ func (r *InstallSnapshotResponse) GetRPCHeader() RPCHeader {
 	return r.RPCHeader
 }
 
-// TimeoutNowRequest is the command used by a leader to signal another server to
-// start an election.
+// TimeoutNowRequest 是由leader发出信号给另一台服务器开始选举的命令。
 type TimeoutNowRequest struct {
 	RPCHeader
 }

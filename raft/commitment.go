@@ -14,7 +14,7 @@ type commitment struct {
 	// 当 commitIndex 增加时通知
 	commitCh chan struct{}
 	// 选民的日志索引,服务器通过日志条目存储起来
-	matchIndexes map[ServerID]uint64
+	matchIndexes map[ServerID]uint64 // node logical id = the latest log index
 	// a quorum stores up through this log entry. monotonically increases.
 	// 一个法定人数通过这个日志条目存储起来，单调地增加。
 	commitIndex uint64

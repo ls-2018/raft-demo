@@ -99,7 +99,7 @@ type AppendPipeline interface {
 	// response futures when they are ready.
 	Consumer() <-chan AppendFuture
 
-	// Close closes the pipeline and cancels all inflight RPCs
+	// Close 关闭管道并取消所有通信中的RPCs
 	Close() error
 }
 

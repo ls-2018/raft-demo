@@ -127,7 +127,7 @@ RPC:
 			if !shouldStop {
 				deferErr.respond(nil)
 			} else {
-				deferErr.respond(fmt.Errorf("replication failed"))
+				deferErr.respond(fmt.Errorf("复制失败"))
 			}
 		case <-s.triggerCh: // 有新的日志产生
 			_ = r.dispatchLogs
@@ -151,19 +151,19 @@ RPC:
 	return
 
 PIPELINE:
-	// Disable until re-enabled
+	// 禁用,直到重新启用
 	s.allowPipeline = false
-
-	// Replicates using a pipeline for high performance. This method
-	// is not able to gracefully recover from errors, and so we fall back
-	// to standard mode on failure.
-	if err := r.pipelineReplicate(s); err != nil {
+	s.peerLock.RLock()
+	peer := s.peer
+	s.peerLock.RUnlock()
+	// 使用管道进行复制以获得高性能。这种方法不能优雅地从错误中恢复，所以我们在失败时退回到标准模式。
+	if err := r.pipelineReplicate(s); err != nil { // 会阻塞的
 		if err != ErrPipelineReplicationNotSupported {
-			s.peerLock.RLock()
-			peer := s.peer
-			s.peerLock.RUnlock()
-			r.logger.Error("failed to start pipeline replication to", "peer", peer, "error", err)
+			r.logger.Error("不能开启管道复制数据到", "peer", peer, "error", err)
 		}
+	} else {
+		// 记录管道的启动和停止
+		r.logger.Info("流水线复制已开启", "follower node", peer)
 	}
 	goto RPC
 }
@@ -228,7 +228,7 @@ START:
 		} else {
 			s.failures++
 		}
-		r.logger.Warn("appendEntries rejected, sending older logs", "peer", peer, "next", atomic.LoadUint64(&s.nextIndex))
+		r.logger.Warn("拒绝appendEntries，发送旧的日志", "peer", peer, "next", atomic.LoadUint64(&s.nextIndex))
 	}
 
 CheckMore:
@@ -351,7 +351,7 @@ func (r *Raft) heartbeat(s *followerReplication, stopCh chan struct{}) {
 	for {
 		select {
 		case <-s.notifyCh: // 心跳主动通知
-		case <-randomTimeout(r.config().HeartbeatTimeout / 10): //定时
+		case <-randomTimeout(r.config().HeartbeatTimeout / 10): //定时  100ms
 		case <-stopCh:
 			return
 		}
@@ -369,7 +369,7 @@ func (r *Raft) heartbeat(s *followerReplication, stopCh chan struct{}) {
 			case <-stopCh:
 			}
 		} else {
-			r.Ph(&req, &resp)
+			r.Ph(&req, &resp) // 打印信息
 			if failures > 0 {
 				r.observe(ResumedHeartbeatObservation{PeerID: peer.ID})
 			}
@@ -385,18 +385,17 @@ func (r *Raft) heartbeat(s *followerReplication, stopCh chan struct{}) {
 // 是在我们已经与Follower同步了我们的状态，并且想切换到更高性能的管道复制模式时使用的。
 // 我们只对AppendEntries命令进行流水线处理，如果我们遇到错误，我们就回到标准的复制模式，这样可以处理更复杂的情况。
 func (r *Raft) pipelineReplicate(s *followerReplication) error {
+	fmt.Println("[***pipelineReplicate***]")
 	s.peerLock.RLock()
 	peer := s.peer // follower节点
 	s.peerLock.RUnlock()
+	// 开启了一个处理pipeline响应的goroutine raft/net_transport.go:682
 	pipeline, err := r.trans.AppendEntriesPipeline(peer.ID, peer.Address)
+	_ = pipeline.(*netPipeline).decodeResponses
 	if err != nil {
 		return err
 	}
 	defer pipeline.Close()
-
-	// 记录管道的启动和停止
-	r.logger.Info("流水线复制", "follower node", peer)
-	defer r.logger.Info("中止流水线复制", "follower node", peer)
 
 	// 创建停止、结束 channel
 	stopCh := make(chan struct{})
@@ -583,6 +582,7 @@ func updateLastAppended(s *followerReplication, req *AppendEntriesRequest) {
 	s.notifyAll(true)
 }
 
+// Ph 打印心跳的信息
 func (r *Raft) Ph(req *AppendEntriesRequest, resp *AppendEntriesResponse) {
 	type A struct {
 		RPCHeader

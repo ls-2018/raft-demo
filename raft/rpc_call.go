@@ -9,7 +9,7 @@ import (
 	. "raft-demo/raft-boltdb/var"
 )
 
-// processRPC 处理rpc请求
+// processRPC 处理rpc请求 日志追加、心跳、投票、快照、超时请求
 func (r *Raft) processRPC(rpc RPC) {
 	// 版本检查
 	if err := r.checkRPCHeader(rpc); err != nil {
@@ -127,15 +127,13 @@ func (r *Raft) appendEntries(rpc RPC, a *AppendEntriesRequest) {
 			}
 			var storeEntry Log
 			if err := r.logs.GetLog(entry.Index, &storeEntry); err != nil {
-				r.logger.Warn("failed to get log entry", "index", entry.Index, "error", err)
+				r.logger.Warn("获取日志条目失败", "index", entry.Index, "error", err)
 				return
 			}
 			if entry.Term != storeEntry.Term {
-				r.logger.Warn("clearing log suffix",
-					"from", entry.Index,
-					"to", lastLogIdx)
+				r.logger.Warn("清理日志前缀", "from", entry.Index, "to", lastLogIdx)
 				if err := r.logs.DeleteRange(entry.Index, lastLogIdx); err != nil {
-					r.logger.Error("failed to clear log suffix", "error", err)
+					r.logger.Error("清理日志前缀失败", "error", err)
 					return
 				}
 				if entry.Index <= r.configurations.latestIndex {
@@ -173,7 +171,7 @@ func (r *Raft) appendEntries(rpc RPC, a *AppendEntriesRequest) {
 
 	}
 
-	// Update the commit index
+	// 更新follower的commit index
 	if a.LeaderCommitIndex > 0 && a.LeaderCommitIndex > r.getCommitIndex() {
 		idx := min(a.LeaderCommitIndex, r.getLastIndex())
 		r.setCommitIndex(idx)
@@ -183,7 +181,6 @@ func (r *Raft) appendEntries(rpc RPC, a *AppendEntriesRequest) {
 		r.processLogs(idx, nil)
 	}
 
-	// Everything went well, set success
 	resp.Success = true
 	r.setLastContact()
 	return

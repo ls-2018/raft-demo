@@ -104,6 +104,7 @@ func (r *raftState) getLastSnapshot() (index, term uint64) {
 	r.lastLock.Unlock()
 	return
 }
+
 // 设置最新的快照的 索引、任期
 func (r *raftState) setLastSnapshot(index, term uint64) {
 	r.lastLock.Lock()
@@ -116,10 +117,12 @@ func (r *raftState) getCommitIndex() uint64 {
 	return atomic.LoadUint64(&r.commitIndex)
 }
 
+// ok
 func (r *raftState) setCommitIndex(index uint64) {
 	atomic.StoreUint64(&r.commitIndex, index)
 }
 
+// ok
 func (r *raftState) getLastApplied() uint64 {
 	return atomic.LoadUint64(&r.lastApplied)
 }

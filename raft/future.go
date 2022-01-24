@@ -281,8 +281,7 @@ func (v *verifyFuture) vote(leader bool) {
 	}
 }
 
-// appendFuture is used for waiting on a pipelined append
-// entries RPC.
+// appendFuture 用于等待一个流水线上的追加条目RPC。
 type appendFuture struct {
 	deferError
 	start time.Time

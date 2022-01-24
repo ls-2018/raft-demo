@@ -105,17 +105,10 @@ func (r *Raft) runLeader() {
 
 // leaderLoop 它在所有不同的leader设置完成后被调用。
 func (r *Raft) leaderLoop() {
-	// stepDown is used to track if there is an inflight log that
-	// would cause us to lose leadership (specifically a RemovePeer of
-	// ourselves). If this is the case, we must not allow any logs to
-	// be processed in parallel, otherwise we are basing commit on
-	// only a single peer (ourself) and replicating to an undefined set
-	// of peers.
 	// stepDown用来追踪是否有飞行日志会导致我们失去领导能力(特别是我们自己的一个RemovePeer)。
-	// 如果是这种情况，我们不能允许任何日志并行处理，否则我们将只基于单个对等体(我们自己)提交，并复制到一组未定义的对等体。
+	// 如果是这种情况，我们不能允许任何日志并行处理，否则我们将只基于单个follower(我们自己)提交，并复制到一组未定义的对等体。
 	stepDown := false
-	// This is only used for the first lease check, we reload lease below
-	// based on the current config value.
+	// 这只用于第一次租约检查，我们在下面根据当前配置值重新加载租约。
 	lease := time.After(r.config().LeaderLeaseTimeout)
 
 	for r.getState() == Leader {

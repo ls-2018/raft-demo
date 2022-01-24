@@ -693,9 +693,11 @@ func (n *netPipeline) decodeResponses() {
 			select {
 			case n.doneCh <- future:
 			case <-n.shutdownCh:
+				_ = n.Close
 				return
 			}
 		case <-n.shutdownCh:
+			_ = n.Close
 			return
 		}
 	}
@@ -703,7 +705,6 @@ func (n *netPipeline) decodeResponses() {
 
 // AppendEntries is used to pipeline a new append entries request.
 func (n *netPipeline) AppendEntries(args *AppendEntriesRequest, resp *AppendEntriesResponse) (AppendFuture, error) {
-	// Create a new future
 	future := &appendFuture{
 		start: time.Now(),
 		args:  args,
@@ -711,12 +712,10 @@ func (n *netPipeline) AppendEntries(args *AppendEntriesRequest, resp *AppendEntr
 	}
 	future.init()
 
-	// Add a send timeout
 	if timeout := n.trans.timeout; timeout > 0 {
 		n.conn.conn.SetWriteDeadline(time.Now().Add(timeout))
 	}
 
-	// Send the RPC
 	if err := sendRPC(n.conn, rpcAppendEntries, future.args); err != nil {
 		return nil, err
 	}
@@ -727,6 +726,7 @@ func (n *netPipeline) AppendEntries(args *AppendEntriesRequest, resp *AppendEntr
 	case n.inprogressCh <- future:
 		return future, nil
 	case <-n.shutdownCh:
+		_ = n.Close
 		return nil, ErrPipelineShutdown
 	}
 }
@@ -736,15 +736,16 @@ func (n *netPipeline) Consumer() <-chan AppendFuture {
 	return n.doneCh
 }
 
-// Close is used to shutdown the pipeline connection.
+// Close 用于关闭所有管道链接is used to shutdown the pipeline connection.
 func (n *netPipeline) Close() error {
 	n.shutdownLock.Lock()
 	defer n.shutdownLock.Unlock()
 	if n.shutdown {
+		// 已关闭
 		return nil
 	}
 
-	// Release the connection
+	// 释放连接
 	n.conn.Release()
 
 	n.shutdown = true

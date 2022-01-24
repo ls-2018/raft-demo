@@ -432,10 +432,10 @@ func (r *Raft) dispatchLogs(applyLogs []*logFuture) {
 //跟随者从AppendEntries中调用这个，每次调用n个条目，并且总是传递futures=nil。
 //领导者在条目被提交时调用此功能。他们从任何飞行日志中传递期货。
 func (r *Raft) processLogs(index uint64, futures map[uint64]*logFuture) {
-	// Reject logs we've applied already
+	// 拒绝我们已经申请的日志
 	lastApplied := r.getLastApplied()
 	if index <= lastApplied {
-		r.logger.Warn("skipping application of old log", "index", index)
+		r.logger.Warn("跳过旧数据", "index", index)
 		return
 	}
 
