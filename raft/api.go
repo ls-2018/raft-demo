@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	_var "raft-demo/raft-boltdb/var"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -441,7 +440,7 @@ func NewRaft(conf *Config, fsm FSM, logs LogStore, stable StableStore, snaps Sna
 
 	// 尝试重置当前任期
 	currentTerm, err := stable.GetUint64(keyCurrentTerm)
-	if err != nil && err != _var.ErrKeyNotFound {
+	if err != nil && err != ErrKeyNotFound {
 		return nil, fmt.Errorf("获取当前任期失败: %v", err)
 	}
 

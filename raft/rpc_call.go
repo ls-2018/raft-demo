@@ -6,7 +6,6 @@ import (
 	"github.com/hashicorp/go-hclog"
 	"io"
 	"io/ioutil"
-	. "raft-demo/raft-boltdb/var"
 )
 
 // processRPC 处理rpc请求 日志追加、心跳、投票、快照、超时请求
@@ -312,7 +311,7 @@ func (r *Raft) requestVote(rpc RPC, req *RequestVoteRequest) {
 
 // installSnapshot Follower状态下，日志落后leader太多
 func (r *Raft) installSnapshot(rpc RPC, req *InstallSnapshotRequest) {
-	_ = NetworkTransport{}.InstallSnapshot
+	_ = (&NetworkTransport{}).InstallSnapshot
 	resp := &InstallSnapshotResponse{
 		Term:    r.getCurrentTerm(),
 		Success: false,

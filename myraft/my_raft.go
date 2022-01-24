@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	fsm "raft-demo/fsm"
 	"raft-demo/raft"
-	raftboltdb "raft-demo/raft-boltdb"
 	"strings"
 	"time"
 )
@@ -28,14 +27,14 @@ func NewMyRaft(raftAddr, raftId, raftDir string) (*raft.Raft, *fsm.Fsm, error) {
 	raft.SetTrans(transport)
 
 	// 日志存储
-	var logStore *raftboltdb.BoltStore
-	logStore, err = raftboltdb.NewBoltStore(filepath.Join(raftDir, "raft-log.db"))
+	var logStore *raft.BoltStore
+	logStore, err = raft.NewBoltStore(filepath.Join(raftDir, "raft-log.db"))
 	if err != nil {
 		log.Fatal(err)
 	}
 	// 表存储
-	var stableStore *raftboltdb.BoltStore
-	stableStore, err = raftboltdb.NewBoltStore(filepath.Join(raftDir, "raft-stable.db"))
+	var stableStore *raft.BoltStore
+	stableStore, err = raft.NewBoltStore(filepath.Join(raftDir, "raft-stable.db"))
 	if err != nil {
 		log.Fatal(err)
 	}
