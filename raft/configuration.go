@@ -114,13 +114,10 @@ type configurations struct {
 	latestIndex uint64
 }
 
-// nextConfiguration generates a new Configuration from the current one and a
-// configuration change request. It's split from appendConfigurationEntry so
-// that it can be unit tested easily.
-//
+// nextConfiguration 节点变更后，返回最新的Configuration
 func nextConfiguration(current Configuration, currentIndex uint64, change configurationChangeRequest) (Configuration, error) {
 	if change.prevIndex > 0 && change.prevIndex != currentIndex {
-		return Configuration{}, fmt.Errorf("configuration changed since %v (latest is %v)", change.prevIndex, currentIndex)
+		return Configuration{}, fmt.Errorf("配置更新 since %v (latest is %v)", change.prevIndex, currentIndex)
 	}
 
 	configuration := current.Clone()

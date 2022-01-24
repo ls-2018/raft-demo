@@ -97,6 +97,7 @@ func (r *raftState) setLastLog(index, term uint64) {
 	r.lastLock.Unlock()
 }
 
+// OK
 func (r *raftState) getLastSnapshot() (index, term uint64) {
 	r.lastLock.Lock()
 	index = r.lastSnapshotIndex

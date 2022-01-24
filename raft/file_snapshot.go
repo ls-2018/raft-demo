@@ -170,10 +170,9 @@ func snapshotName(term, index uint64) string {
 	return fmt.Sprintf("%d-%d-%d", term, index, msec)
 }
 
-// Create is used to start a new snapshot
+// Create 用于创建新的快照
 func (f *FileSnapshotStore) Create(version SnapshotVersion, index, term uint64,
 	configuration Configuration, configurationIndex uint64, trans Transport) (SnapshotSink, error) {
-	// We only support version 1 snapshots at this time.
 	if version != 1 {
 		return nil, fmt.Errorf("unsupported snapshot version %d", version)
 	}
@@ -181,7 +180,7 @@ func (f *FileSnapshotStore) Create(version SnapshotVersion, index, term uint64,
 	// Create a new path
 	name := snapshotName(term, index)
 	path := filepath.Join(f.path, name+tmpSuffix)
-	f.logger.Info("creating new snapshot", "path", path)
+	f.logger.Info("创建新快照", "path", path)
 
 	// Make the directory
 	if err := os.MkdirAll(path, 0755); err != nil {

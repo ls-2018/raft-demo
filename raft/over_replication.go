@@ -157,9 +157,7 @@ START:
 	s.peerLock.RUnlock()
 	err := r.setupAppendEntries(s, &req, atomic.LoadUint64(&s.nextIndex), lastIndex)
 	// 填充req需要携带的内容
-	//  一下子 产生了太多的日志，生成了新的快照，旧的索引A被干掉，现在最早的索引是B
-	// s.nextIndex 还是启动时的索引，A
-	// 那么在查找A---> B的日志的时候，就会报 ErrLogNotFound
+	// todo 那么在查找A---> B的日志的时候，就会报 ErrLogNotFound
 
 	if err == ErrLogNotFound { // 在读取日志时没有查到
 		goto SendSnap // 只有这一种情况，会触发sendLatestSnapshot

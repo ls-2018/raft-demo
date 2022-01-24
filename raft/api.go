@@ -140,7 +140,7 @@ type Raft struct {
 	// snapshots 存储和恢复快照数据
 	snapshots SnapshotStore
 
-	// userSnapshotCh
+	// userSnapshotCh // 用户可以主动触发打快照操作
 	userSnapshotCh chan *userSnapshotFuture
 
 	// userRestoreCh 用于用户触发的快照
@@ -539,7 +539,7 @@ func NewRaft(conf *Config, fsm FSM, logs LogStore, stable StableStore, snaps Sna
 	// 启动后台worker
 	r.goFunc(r.run)
 	r.goFunc(r.runFSM)
-	r.goFunc(r.runSnapshots)
+	r.goFunc(r.runSnapshots)// 打快照
 	return r, nil
 }
 
@@ -916,7 +916,6 @@ func (r *Raft) Restore(meta *SnapshotMeta, reader io.Reader, timeout time.Durati
 		timer = time.After(timeout)
 	}
 
-	// Perform the restore.
 	restore := &userRestoreFuture{
 		meta:   meta,
 		reader: reader,

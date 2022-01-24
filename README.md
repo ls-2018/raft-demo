@@ -186,3 +186,14 @@ min(nextIndex+uint64(maxAppendEntries)-1, lastIndex)-nextIndex+1 代表了此次
 
 另外、在非管道模式下，只要成功发送一次AppendEntriesRequest,就会进入到管道模式。也就说尽可能使用管道模式
 ```
+  3、leader节点的崩溃可能会导致日志不一致：旧的leader可能没有完全复制日志中的所有条目。
+```
+在Raft下，leader通过强制followers复制它的日志来处理日志的不一致，不一致的日志会被强制覆盖。
+follower首先找到最近(时间域)的一条日志条目，该日志条目在leader和follower的日志中为一致的。
+然后删除follower上该日志条目所有日志，然后用leader的日志覆盖。
+```
+  4、打快照的时机
+```
+raft/config.go:137
+SnapshotInterval 快照间隔 检测一次 && log db 增量条数 > SnapshotThreshold
+```

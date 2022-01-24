@@ -41,8 +41,7 @@ type SnapshotStore interface {
 	Open(id string) (*SnapshotMeta, io.ReadCloser, error)
 }
 
-// SnapshotSink is returned by StartSnapshot. The FSM will Write state
-// to the sink and call Close on completion. On error, Cancel will be invoked.
+// SnapshotSink 由StartSnapshot返回。FSM将状态写入接收器，完成后调用Close。出错时，将调用Cancel。
 type SnapshotSink interface {
 	io.WriteCloser
 	ID() string
@@ -53,19 +52,19 @@ type SnapshotSink interface {
 func (r *Raft) runSnapshots() {
 	for {
 		select {
-		case <-randomTimeout(r.config().SnapshotInterval):
+		case <-randomTimeout(r.config().SnapshotInterval): // 120s触发一次
 			// 检查是否应该打快照
 			if !r.shouldSnapshot() {
 				continue
 			}
 
 			// 开始打快照
-			if _, err := r.TakeSnapshot(); err != nil {
+			if _, err := r.takeSnapshot(); err != nil {
 				r.logger.Error("打快照失败", "error", err)
 			}
 
-		case future := <-r.userSnapshotCh:
-			id, err := r.TakeSnapshot()
+		case future := <-r.userSnapshotCh:// 用户主动触发
+			id, err := r.takeSnapshot()
 			if err != nil {
 				r.logger.Error("打快照失败", "error", err)
 			} else {
@@ -81,26 +80,25 @@ func (r *Raft) runSnapshots() {
 	}
 }
 
-// shouldSnapshot checks if we meet the conditions to take
-// a new snapshot.
+// shouldSnapshot 检查是否应该创建新的快照
 func (r *Raft) shouldSnapshot() bool {
-	// Check the last snapshot index
+	// 检查最新快照的索引
 	lastSnap, _ := r.getLastSnapshot()
 
-	// Check the last log index
+	// 检查最新的索引,直接从db读取
 	lastIdx, err := r.logs.LastIndex()
 	if err != nil {
 		r.logger.Error("failed to get last log index", "error", err)
 		return false
 	}
 
-	// Compare the delta to the threshold
+	// 将增量与阈值进行比较
 	delta := lastIdx - lastSnap
 	return delta >= r.config().SnapshotThreshold
 }
 
-// TakeSnapshot 被用来生成一个新的快照。这必须只在快照线程中调用，而不是在主线程中。它返回新快照的ID，以及一个错误。
-func (r *Raft) TakeSnapshot() (string, error) {
+// takeSnapshot 被用来生成一个新的快照。这必须只在快照线程中调用，而不是在主线程中。它返回新快照的ID，以及一个错误。
+func (r *Raft) takeSnapshot() (string, error) {
 
 	// 为FSM创建一个执行快照的请求。
 	snapReq := &reqSnapshotFuture{}
@@ -138,14 +136,9 @@ func (r *Raft) TakeSnapshot() (string, error) {
 	committed := configReq.configurations.committed
 	committedIndex := configReq.configurations.committedIndex
 
-	// We don't support snapshots while there's a config change outstanding
-	// since the snapshot doesn't have a means to represent this state. This
-	// is a little weird because we need the FSM to apply an index that's
-	// past the configuration change, even though the FSM itself doesn't see
-	// the configuration changes. It should be ok in practice with normal
-	// application traffic flowing through the FSM. If there's none of that
-	// then it's not crucial that we snapshot, since there's not much going
-	// on Raft-wise.
+	// 当配置更改未完成时，我们不支持快照，因为快照没有表示这种状态的方法。
+	//这有点奇怪，因为我们需要FSM应用一个已经经过了配置更改的索引，即使FSM本身没有看到配置更改。在实际操作中，通过FSM的应用程序流量应该是正常的。
+	//如果这些都不存在，那么我们抓拍就不重要了，因为在raft上并没有太多内容。
 	if snapReq.index < committedIndex {
 		return "", fmt.Errorf("cannot take snapshot now, wait until the configuration entry at %v has been applied (have applied %v)",
 			committedIndex, snapReq.index)

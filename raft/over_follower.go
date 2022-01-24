@@ -25,14 +25,14 @@ func (r *Raft) runFollower() {
 		case r := <-r.leadershipTransferCh:
 			r.respond(ErrNotLeader)
 		//-----------------------------------
-		case c := <-r.configurationsCh:
+		case c := <-r.configurationsCh: // over
+			// 配置获取请求，读取当前配置、然后设置
 			c.configurations = r.configurations.Clone()
 			c.respond(nil)
-
 		case b := <-r.bootstrapCh:
 			b.respond(r.liveBootstrap(b.configuration))
 
-		case <-heartbeatTimer:
+		case <-heartbeatTimer: // over
 			// node 启动后，默认等待超时，然后进入这里
 			// 重新启动心跳定时器
 			hbTimeout := r.config().HeartbeatTimeout
@@ -61,7 +61,7 @@ func (r *Raft) runFollower() {
 					didWarn = true
 				}
 			} else {
-				// 是一个选民
+				// 自己是一个选民
 				if hasVote(r.configurations.latest, r.localID) {
 					r.logger.Warn("心跳超时，开始选举", "上一次的leader", lastLeader) // 上一次的leader
 					r.setState(Candidate)

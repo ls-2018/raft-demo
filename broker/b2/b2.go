@@ -91,7 +91,7 @@ func main() {
 	//		}
 	//
 	//	}
-	//	snapshot, err := httpServer.ctx.TakeSnapshot()
+	//	snapshot, err := httpServer.ctx.takeSnapshot()
 	//	if err != nil {
 	//		return
 	//	}

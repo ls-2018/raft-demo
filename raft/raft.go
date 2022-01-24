@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	minCheckInterval       = 10 * time.Millisecond
+	minCheckInterval = 10 * time.Millisecond
 )
 
 var (
@@ -121,7 +121,7 @@ func (r *Raft) run() {
 	}
 }
 
-// liveBootstrap    尝试发送一个初始的集群的初始配置；   only makes sense in the follower state.
+// todo 尝试发送一个初始的集群的初始配置；   只有在跟随者状态下才有意义。
 func (r *Raft) liveBootstrap(configuration Configuration) error {
 	// Use the pre-init API to make the static updates.
 	cfg := r.config()

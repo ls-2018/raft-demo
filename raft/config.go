@@ -68,16 +68,13 @@ type Config struct {
 	// 这里传递的值是使用的初始设置。在操作过程中，可以用 ReloadConfig。
 	SnapshotInterval time.Duration
 
-	// SnapshotThreshold controls how many outstanding logs there must be before
-	// we perform a snapshot. This is to prevent excessive snapshotting by
-	// replaying a small set of logs instead. The value passed here is the initial
-	// setting used. This can be tuned during operation using ReloadConfig.
-	SnapshotThreshold uint64
+	// SnapshotThreshold
+	// 控制在执行快照之前必须有多少未完成的日志。这是为了通过重放一小组日志来防止过度的快照。
+	// 这里传递的值是使用的初始设置。这可以在操作期间使用ReloadConfig进行调优。
+	SnapshotThreshold uint64 // 8192 条数据
 
-	// LeaderLeaseTimeout is used to control how long the "lease" lasts
-	// for being the leader without being able to contact a quorum
-	// of nodes. If we reach this interval without contact, we will
-	// step down as leader.
+	// LeaderLeaseTimeout
+	// 用于控制作为leader而不能联系节点的quorum的“租约”持续多长时间。如果我们到达这段时间没有联系，我们将辞去领导职务。
 	LeaderLeaseTimeout time.Duration
 
 	// LocalID 是该服务器在所有时间内的唯一ID。当使用ProtocolVersion < 3运行时，你必须将其设置为与传输的网络地址相同。

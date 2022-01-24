@@ -28,8 +28,8 @@ func init() {
 	flag.StringVar(&httpAddr, "http_addr", "127.0.0.1:10001", "http listen addr")
 	flag.StringVar(&raftAddr, "raft_addr", "127.0.0.1:10000", "raft listen addr")
 	flag.StringVar(&raftId, "raft_id", "1", "raft id")
-	flag.StringVar(&raftCluster, "raft_cluster", "1/127.0.0.1:10000,2/127.0.0.1:20000", "cluster info")
-	//flag.StringVar(&raftCluster, "raft_cluster", "1/127.0.0.1:10000", "cluster info")
+	//flag.StringVar(&raftCluster, "raft_cluster", "1/127.0.0.1:10000,2/127.0.0.1:20000", "cluster info")
+	flag.StringVar(&raftCluster, "raft_cluster", "1/127.0.0.1:10000", "cluster info")
 }
 
 // go build -mod vendor
@@ -77,7 +77,7 @@ func main() {
 	http.HandleFunc("/get", httpServer.Get)
 	go func() {
 		time.Sleep(time.Second * 5)
-		for i := 0; i < 200; i++ {
+		for i := 0; i < 9200; i++ {
 			data := "set" + "," + fmt.Sprintf("a+%d", i) + "," + fmt.Sprintf("%d", i)
 
 			value := httpServer.fsm.DataBase.Get(fmt.Sprintf("a+%d", i))
@@ -90,12 +90,10 @@ func main() {
 			}
 
 		}
-		snapshot, err := httpServer.ctx.TakeSnapshot()
-		if err != nil {
-			return
+		future := httpServer.ctx.Snapshot()
+		if err := future.Error(); err == nil {
+			fmt.Println("-------->", future)
 		}
-		fmt.Println("-------->", snapshot)
-
 	}()
 	http.ListenAndServe(httpAddr, nil)
 
