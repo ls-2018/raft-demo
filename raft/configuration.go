@@ -7,13 +7,13 @@ type ServerSuffrage int
 
 // Note: 不要对这些进行重新编号，因为这些数字会被写进日志。
 const (
-	// Voter 选民
-	Voter ServerSuffrage = iota
-	// Nonvoter 非选民，只用来接收日志
-	Nonvoter
+	Voter ServerSuffrage = iota // Voter 选民
+
+	Nonvoter // Nonvoter 非选民，只用来接收日志
+	Staging
+
 	// Staging 介于  Voter 与 Nonvoter 之间的一个状态
 	// 是一个像非选民一样行事的服务器，但有一个例外：一旦中转服务器收到足够多的日志条目，足以赶上领导者的日志，领导者将调用成员变更，将中转服务器改为选民。
-	Staging
 )
 
 func (s ServerSuffrage) String() string {
@@ -27,12 +27,6 @@ func (s ServerSuffrage) String() string {
 	}
 	return "ServerSuffrage"
 }
-
-
-
-type nopConfigurationStore struct{}
-
-func (s nopConfigurationStore) StoreConfiguration(_ uint64, _ Configuration) {}
 
 // ServerID 是一个唯一的字符串，用于识别服务器。
 type ServerID string
@@ -56,28 +50,22 @@ type Configuration struct {
 	Servers []Server
 }
 
-// Clone makes a deep copy of a Configuration.
+// Clone 深拷贝
 func (c *Configuration) Clone() (copy Configuration) {
 	copy.Servers = append(copy.Servers, c.Servers...)
 	return
 }
 
-// ConfigurationChangeCommand is the different ways to change the cluster
-// configuration.
+// ConfigurationChangeCommand 对集群节点的操作
 type ConfigurationChangeCommand uint8
 
 const (
-	// AddStaging makes a server Staging unless its Voter.
-	AddStaging ConfigurationChangeCommand = iota
-	// AddNonvoter makes a server Nonvoter unless its Staging or Voter.
-	AddNonvoter
-	// DemoteVoter makes a server Nonvoter unless its absent.
-	DemoteVoter
-	// RemoveServer removes a server entirely from the cluster membership.
-	RemoveServer
-	// Promote is created automatically by a leader; it turns a Staging server
-	// into a Voter.
-	Promote
+	// AddStaging 使得服务器变成Staging，除非是Voter。
+	AddStaging   ConfigurationChangeCommand = iota
+	AddNonvoter                             // 添加非竞选者
+	DemoteVoter                             // 移除竞选者
+	RemoveServer                            // 移除节点
+	Promote                                 // Promote 由leader自动创建 ; 由Staging变成Voter
 )
 
 func (c ConfigurationChangeCommand) String() string {
@@ -96,17 +84,12 @@ func (c ConfigurationChangeCommand) String() string {
 	return "ConfigurationChangeCommand"
 }
 
-// configurationChangeRequest describes a change that a leader would like to
-// make to its current configuration. It's used only within a single server
-// (never serialized into the log), as part of `configurationChangeFuture`.
+// configurationChangeRequest 集群节点变更
 type configurationChangeRequest struct {
 	command       ConfigurationChangeCommand
-	serverID      ServerID
-	serverAddress ServerAddress // only present for AddStaging, AddNonvoter
-	// prevIndex, if nonzero, is the index of the only configuration upon which
-	// this change may be applied; if another configuration entry has been
-	// added in the meantime, this request will fail.
-	prevIndex uint64
+	serverID      ServerID      // 逻辑ID
+	serverAddress ServerAddress // 可以通信的服务地址
+	prevIndex     uint64
 }
 
 // configurations is state tracked on every server about its Configurations.
@@ -131,59 +114,10 @@ type configurations struct {
 	latestIndex uint64
 }
 
-// Clone makes a deep copy of a configurations object.
-func (c *configurations) Clone() (copy configurations) {
-	copy.committed = c.committed.Clone()
-	copy.committedIndex = c.committedIndex
-	copy.latest = c.latest.Clone()
-	copy.latestIndex = c.latestIndex
-	return
-}
-
-// hasVote 如果'id'标识的服务器是所提供的配置中的一个选民，则返回true。
-func hasVote(configuration Configuration, id ServerID) bool {
-	for _, server := range configuration.Servers {
-		if server.ID == id {
-			return server.Suffrage == Voter
-		}
-	}
-	return false
-}
-
-// checkConfiguration tests a cluster membership configuration for common
-// errors.
-func checkConfiguration(configuration Configuration) error {
-	idSet := make(map[ServerID]bool)
-	addressSet := make(map[ServerAddress]bool)
-	var voters int
-	for _, server := range configuration.Servers {
-		if server.ID == "" {
-			return fmt.Errorf("empty ID in configuration: %v", configuration)
-		}
-		if server.Address == "" {
-			return fmt.Errorf("empty address in configuration: %v", server)
-		}
-		if idSet[server.ID] {
-			return fmt.Errorf("found duplicate ID in configuration: %v", server.ID)
-		}
-		idSet[server.ID] = true
-		if addressSet[server.Address] {
-			return fmt.Errorf("found duplicate address in configuration: %v", server.Address)
-		}
-		addressSet[server.Address] = true
-		if server.Suffrage == Voter {
-			voters++
-		}
-	}
-	if voters == 0 {
-		return fmt.Errorf("need at least one voter in configuration: %v", configuration)
-	}
-	return nil
-}
-
 // nextConfiguration generates a new Configuration from the current one and a
 // configuration change request. It's split from appendConfigurationEntry so
 // that it can be unit tested easily.
+//
 func nextConfiguration(current Configuration, currentIndex uint64, change configurationChangeRequest) (Configuration, error) {
 	if change.prevIndex > 0 && change.prevIndex != currentIndex {
 		return Configuration{}, fmt.Errorf("configuration changed since %v (latest is %v)", change.prevIndex, currentIndex)
@@ -271,12 +205,29 @@ func nextConfiguration(current Configuration, currentIndex uint64, change config
 	return configuration, nil
 }
 
-// encodePeers is used to serialize a Configuration into the old peers format.
-// This is here for backwards compatibility when operating with a mix of old
-// servers and should be removed once we deprecate support for protocol version 1.
+// ------------------------------------ over ------------------------------------
+
+// Clone 深拷贝一个configurations对象
+func (c *configurations) Clone() (copy configurations) {
+	copy.committed = c.committed.Clone()
+	copy.committedIndex = c.committedIndex
+	copy.latest = c.latest.Clone()
+	copy.latestIndex = c.latestIndex
+	return
+}
+
+// hasVote 如果'id'标识的服务器是所提供的配置中的一个选民，则返回true。
+func hasVote(configuration Configuration, id ServerID) bool {
+	for _, server := range configuration.Servers {
+		if server.ID == id {
+			return server.Suffrage == Voter
+		}
+	}
+	return false
+}
+
+// OK
 func encodePeers(configuration Configuration, trans Transport) []byte {
-	// Gather up all the voters, other suffrage types are not supported by
-	// this data format.
 	var encPeers [][]byte
 	for _, server := range configuration.Servers {
 		if server.Suffrage == Voter {
@@ -293,17 +244,12 @@ func encodePeers(configuration Configuration, trans Transport) []byte {
 	return buf.Bytes()
 }
 
-// decodePeers is used to deserialize an old list of peers into a Configuration.
-// This is here for backwards compatibility with old log entries and snapshots;
-// it should be removed eventually.
+// OK
 func decodePeers(buf []byte, trans Transport) (Configuration, error) {
-	// Decode the buffer first.
 	var encPeers [][]byte
 	if err := decodeMsgPack(buf, &encPeers); err != nil {
 		return Configuration{}, fmt.Errorf("failed to decode peers: %v", err)
 	}
-
-	// Deserialize each peer.
 	var servers []Server
 	for _, enc := range encPeers {
 		p := trans.DecodePeer(enc)
@@ -317,8 +263,7 @@ func decodePeers(buf []byte, trans Transport) (Configuration, error) {
 	return Configuration{Servers: servers}, nil
 }
 
-// EncodeConfiguration serializes a Configuration using MsgPack, or panics on
-// errors.
+// EncodeConfiguration 使用MsgPack 序列化所有节点配置
 func EncodeConfiguration(configuration Configuration) []byte {
 	buf, err := encodeMsgPack(configuration)
 	if err != nil {
@@ -334,4 +279,34 @@ func DecodeConfiguration(buf []byte) Configuration {
 		panic(fmt.Errorf("failed to decode configuration: %v", err))
 	}
 	return configuration
+}
+
+// checkConfiguration 集群成员配置常规检查
+func checkConfiguration(configuration Configuration) error {
+	idSet := make(map[ServerID]bool)
+	addressSet := make(map[ServerAddress]bool)
+	var voters int
+	for _, server := range configuration.Servers {
+		if server.ID == "" {
+			return fmt.Errorf("empty ID in configuration: %v", configuration)
+		}
+		if server.Address == "" {
+			return fmt.Errorf("empty address in configuration: %v", server)
+		}
+		if idSet[server.ID] {
+			return fmt.Errorf("found duplicate ID in configuration: %v", server.ID)
+		}
+		idSet[server.ID] = true
+		if addressSet[server.Address] {
+			return fmt.Errorf("found duplicate address in configuration: %v", server.Address)
+		}
+		addressSet[server.Address] = true
+		if server.Suffrage == Voter {
+			voters++
+		}
+	}
+	if voters == 0 {
+		return fmt.Errorf("need at least one voter in configuration: %v", configuration)
+	}
+	return nil
 }
