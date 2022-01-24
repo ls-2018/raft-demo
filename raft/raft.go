@@ -11,7 +11,6 @@ import (
 
 const (
 	minCheckInterval       = 10 * time.Millisecond
-	oldestLogGaugeInterval = 10 * time.Second
 )
 
 var (

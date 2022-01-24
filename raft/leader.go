@@ -30,7 +30,6 @@ func (r *Raft) runLeader() {
 
 	// 运行一个后台go-routine来排放日志年龄的指标
 	stopCh := make(chan struct{})
-	go emitLogStoreMetrics(r.logs, []string{"raft", "leader"}, oldestLogGaugeInterval, stopCh)
 
 	// todo 降级时的清理状态
 	defer func() {

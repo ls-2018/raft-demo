@@ -73,28 +73,7 @@ type Log struct {
 	// 持有一个不透明的字节切片，用于中间件的信息。
 	// 这库的客户端在添加、删除layer 时对其进行适当的修改。
 	// 这个值是日志的一部分，所以非常大的值可能会导致时间问题。
-
-	// N.B. It is _up to the client_ to handle upgrade paths. For instance if
-	// using this with go-raftchunking, the client should ensure that all Raft
-	// peers are using a version that can handle that extension before ever
-	// actually triggering chunking behavior. It is sometimes sufficient to
-	// ensure that non-leaders are upgraded first, then the current leader is
-	// upgraded, but a leader changeover during this process could lead to
-	// trouble, so gating extension behavior via some flag in the client
-	// program is also a good idea.
 	Extensions []byte
-
-	// AppendedAt stores the time the leader first appended this log to it's
-	// LogStore. Followers will observe the leader's time. It is not used for
-	// coordination or as part of the replication protocol at all. It exists only
-	// to provide operational information for example how many seconds worth of
-	// logs are present on the leader which might impact follower's ability to
-	// catch up after restoring a large snapshot. We should never rely on this
-	// being in the past when appending on a follower or reading a log back since
-	// the clock skew can mean a follower could see a log with a future timestamp.
-	// In general too the leader is not required to persist the log before
-	// delivering to followers although the current implementation happens to do
-	// this.
 	AppendedAt time.Time
 }
 
@@ -120,47 +99,12 @@ type LogStore interface {
 	DeleteRange(min, max uint64) error
 }
 
-func oldestLog(s LogStore) (Log, error) {
-	var l Log
-
-	// We might get unlucky and have a truncate right between getting first log
-	// index and fetching it so keep trying until we succeed or hard fail.
-	var lastFailIdx uint64
-	var lastErr error
-	for {
-		firstIdx, err := s.FirstIndex()
-		if err != nil {
-			return l, err
-		}
-		if firstIdx == 0 {
-			return l, ErrLogNotFound
-		}
-		if firstIdx == lastFailIdx {
-			// Got same index as last time around which errored, don't bother trying
-			// to fetch it again just return the error.
-			return l, lastErr
-		}
-		err = s.GetLog(firstIdx, &l)
-		if err == nil {
-			// We found the oldest log, break the loop
-			break
-		}
-		// We failed, keep trying to see if there is a new firstIndex
-		lastFailIdx = firstIdx
-		lastErr = err
-	}
-	return l, nil
-}
-
-// 发送日志存储指标
-func emitLogStoreMetrics(s LogStore, prefix []string, interval time.Duration, stopCh <-chan struct{}) {
-	for {
-		select {
-		case <-time.After(interval):
-			// 在错误情况下，发出0作为年龄
-			oldestLog(s)
-		case <-stopCh:
-			return
-		}
-	}
+// StableStore 是用来为关键配置提供稳定的存储，以确保安全。
+type StableStore interface {
+	Set(key []byte, val []byte) error
+	// Get 如果没找到返回空切片
+	Get(key []byte) ([]byte, error)
+	SetUint64(key []byte, val uint64) error
+	// GetUint64 如果没找到则返回0
+	GetUint64(key []byte) (uint64, error)
 }
