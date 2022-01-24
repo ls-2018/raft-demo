@@ -105,6 +105,11 @@ LastVoteTerm: 2
 
 ### raft-log.db
 ```
+key: 1,value :{Index:1 Term:1 Type:LogConfiguration Data:{Servers:[]} Extensions: AppendedAt:0001-01-01 00:00:00 +0000 UTC}
+key: 2,value :{Index:2 Term:3 Type:LogNoop Data:{Servers:[]} Extensions: AppendedAt:2022-01-24 02:52:29.167131 +0000 UTC}
+key: 3,value :{Index:3 Term:3 Type:LogCommand Data:{Servers:[]} Extensions: AppendedAt:2022-01-24 02:52:30.7774 +0000 UTC}
+key: 4,value :{Index:4 Term:3 Type:LogCommand Data:{Servers:[]} Extensions: AppendedAt:2022-01-24 02:52:30.856799 +0000 UTC}
+...
 key: 84,value :&{Index:84 Term:2 Type:LogCommand Data:[115 101 116 44 97 43 56 49 44 56 49] Extensions:[] AppendedAt:2022-01-20 11:02:35.959754 +0800 CST m=+8.364670689}
 key: 85,value :&{Index:85 Term:2 Type:LogCommand Data:[115 101 116 44 97 43 56 50 44 56 50] Extensions:[] AppendedAt:2022-01-20 11:02:35.998264 +0800 CST m=+8.403179990}
 key: 86,value :&{Index:86 Term:2 Type:LogCommand Data:[115 101 116 44 97 43 56 51 44 56 51] Extensions:[] AppendedAt:2022-01-20 11:02:36.036569 +0800 CST m=+8.441484039}
@@ -165,10 +170,19 @@ RequestVote(本机的逻辑ID, 本机的通信地址, req, &resp.RequestVoteResp
 问题：
   1、集群最初，假设有两个节点都获得大多数投票，都使自身成为了leader？
   
-```在发送心跳的时候,会解决这个问题
-	if a.Term > r.getCurrentTerm() || r.getState() != Follower {
-		r.setState(Follower)
-		r.setCurrentTerm(a.Term)
-		resp.Term = a.Term
-	}
+```
+在发送心跳的时候,会解决这个问题
+if a.Term > r.getCurrentTerm() || r.getState() != Follower {
+    r.setState(Follower)
+    r.setCurrentTerm(a.Term)
+    resp.Term = a.Term
+}
+```
+  2、问什么就算是日志开启了pipeline模式,也是每次都发送一条日志
+```
+因此每次有日志产生， 会 lastIndex++、调用replicateTo【串行】，也就是不会产生日志积累，也就不会在pipe里同时传输多条日志了
+另外、 setNewLogs()函数是具体对AppendEntriesRequest进行日志封装的逻辑
+min(nextIndex+uint64(maxAppendEntries)-1, lastIndex)-nextIndex+1 代表了此次请求携带的日志量
+
+另外、在非管道模式下，只要成功发送一次AppendEntriesRequest,就会进入到管道模式。也就说尽可能使用管道模式
 ```

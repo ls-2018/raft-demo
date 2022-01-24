@@ -345,10 +345,10 @@ func (r *Raft) leaderLoop() {
 
 // verifyLeader
 func (r *Raft) verifyLeader(v *verifyFuture) {
-	// Current leader always votes for self
+	// 现任领导人总是为自己投票
 	v.votes = 1
 
-	// Set the quorum size, hot-path for single node
+	// 设置获胜需要的票数
 	v.quorumSize = r.quorumSize()
 	if v.quorumSize == 1 {
 		v.respond(nil)

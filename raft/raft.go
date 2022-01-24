@@ -125,9 +125,7 @@ func (r *Raft) run() {
 	}
 }
 
-// liveBootstrap attempts to seed an initial configuration for the cluster. See
-// the Raft object's member BootstrapCluster for more details. This must only be
-// called on the main thread, and only makes sense in the follower state.
+// liveBootstrap    尝试发送一个初始的集群的初始配置；   only makes sense in the follower state.
 func (r *Raft) liveBootstrap(configuration Configuration) error {
 	// Use the pre-init API to make the static updates.
 	cfg := r.config()

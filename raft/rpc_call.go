@@ -94,7 +94,6 @@ func (r *Raft) appendEntries(rpc RPC, a *AppendEntriesRequest) {
 			prevLogTerm = lastTerm // 日志索引一样、任期应该一致
 			//	 TODO 一会儿找不一致的情况，😁    ？？不同集群的节点，
 		} else {
-			fmt.Println(a.PrevLogEntry, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", lastIdx)
 			// 分两种
 			// PrevLogEntry < lastIdx   可以查找，不会报错
 			// PrevLogEntry > lastIdx	查不到，会报错

@@ -77,7 +77,7 @@ func main() {
 	http.HandleFunc("/get", httpServer.Get)
 	go func() {
 		time.Sleep(time.Second * 5)
-		for i := 0; i < 100; i++ {
+		for i := 0; i < 2000; i++ {
 			data := "set" + "," + fmt.Sprintf("a+%d", i) + "," + fmt.Sprintf("%d", i)
 
 			value := httpServer.fsm.DataBase.Get(fmt.Sprintf("%d", i))

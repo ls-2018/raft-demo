@@ -87,36 +87,28 @@ type WithPeers interface {
 	DisconnectAll()                          // Disconnect all peers, possibly to reconnect them later
 }
 
-// AppendPipeline is used for pipelining AppendEntries requests. It is used
-// to increase the replication throughput by masking latency and better
-// utilizing bandwidth.
+// AppendPipeline 用于管道AppendEntries请求。它通过屏蔽延迟和更好地利用带宽来提高复制吞吐量。
 type AppendPipeline interface {
-	// AppendEntries is used to add another request to the pipeline.
-	// The send may block which is an effective form of back-pressure.
+	// AppendEntries 用于向管道中添加另一个请求。发送可能会阻塞，这是一种有效的背压形式。
 	AppendEntries(args *AppendEntriesRequest, resp *AppendEntriesResponse) (AppendFuture, error)
 
-	// Consumer returns a channel that can be used to consume
-	// response futures when they are ready.
+	// Consumer 返回用于消费的 就绪的response futures  channel
 	Consumer() <-chan AppendFuture
 
 	// Close 关闭管道并取消所有通信中的RPCs
 	Close() error
 }
 
-// AppendFuture is used to return information about a pipelined AppendEntries request.
+// AppendFuture 用于返回管道传输对象的信息
 type AppendFuture interface {
 	Future
 
-	// Start returns the time that the append request was started.
-	// It is always OK to call this method.
+	// Start 返回追加请求开始的时间。调用这个方法总是ok的。
 	Start() time.Time
 
-	// Request holds the parameters of the AppendEntries call.
-	// It is always OK to call this method.
+	// Request 保存AppendEntries调用的参数。调用这个方法总是OK的。
 	Request() *AppendEntriesRequest
 
-	// Response holds the results of the AppendEntries call.
-	// This method must only be called after the Error
-	// method returns, and will only be valid on success.
+	// Response 保存AppendEntries调用的结果。此方法只能在Error方法返回后调用，并且只有在成功时才有效。
 	Response() *AppendEntriesResponse
 }

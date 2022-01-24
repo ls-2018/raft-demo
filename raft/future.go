@@ -271,6 +271,8 @@ func (v *verifyFuture) vote(leader bool) {
 		// 为自己投票
 		v.votes++
 		if v.votes >= v.quorumSize {
+			// 单节点 不会走到这里，因为replicate对自身是不会复制数据的
+			// raft/raft.go:152
 			fmt.Println("✈️ ✈️ ✈️", v.votes)
 			v.notifyCh <- v
 			v.notifyCh = nil

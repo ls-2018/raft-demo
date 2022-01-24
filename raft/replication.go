@@ -26,7 +26,7 @@ type followerReplication struct {
 	// 32位平台的为了原子操作 需要 64bit对齐
 	// currentTerm leader当前的任期
 	currentTerm uint64
-	// nextIndex 下一条要发送给follower的日志
+	// nextIndex 下一条要发送给follower的日志索引   xx[nextIndex:?]   数据一致性时   nextIndex 应该与latestIndex+1 相等
 	nextIndex uint64 // 选主以后，从leader开始时的的下一条日志开始复制
 
 	// peer 包含远程follower的网络地址和ID。
@@ -38,7 +38,7 @@ type followerReplication struct {
 
 	// 当leader变换 发送通知
 	// follower从集群移除->close. 携带一个日志索引，应该尽最大努力通过该索引来尝试复制。  在退出之前，
-	stopCh chan uint64
+	stopCh chan uint64 // 最外层循环、管道模式、非管道模式
 
 	// triggerCh 节点刚成为leader；每当有新的条目被添加到日志中时，就会得到通知。
 	triggerCh chan struct{}
@@ -54,9 +54,9 @@ type followerReplication struct {
 	failures uint64
 
 	// notifyCh 需要发送心跳的channel，用来检查本节点是不是leader
-	notifyCh chan struct{}
+	notifyCh chan struct{}// 收到消息了
 	// notify  在收到确认信息后，需要解决的回应
-	notify     map[*verifyFuture]struct{}
+	notify     map[*verifyFuture]struct{} // heartbeat 成功,会对这里的值设置
 	notifyLock sync.Mutex
 
 	// stepDown 是用来向leader表明，我们应该根据follower的信息下台。
@@ -66,218 +66,21 @@ type followerReplication struct {
 	allowPipeline bool
 }
 
-// notifyAll 是用来通知所有等待中的verifyFuture。如果Follower认为我们仍然是领导者。
-func (s *followerReplication) notifyAll(leader bool) {
-	// 清除等待通知，尽量减少锁定时间
-	s.notifyLock.Lock()
-	n := s.notify
-	s.notify = make(map[*verifyFuture]struct{})
-	s.notifyLock.Unlock()
+// TODO 什么时候打的快照呢？还有什么其他情况
 
-	// 确认我们的选举权
-	for v := range n {
-		v.vote(leader)
-	}
-}
-
-// cleanNotify 用于删除待验证的请求
-func (s *followerReplication) cleanNotify(v *verifyFuture) {
-	s.notifyLock.Lock()
-	delete(s.notify, v)
-	s.notifyLock.Unlock()
-}
-
-// LastContact returns the time of last contact.
-func (s *followerReplication) LastContact() time.Time {
-	s.lastContactLock.RLock()
-	last := s.lastContact
-	s.lastContactLock.RUnlock()
-	return last
-}
-
-// setLastContact 设置与follower最新的通信时间
-func (s *followerReplication) setLastContact() {
-	s.lastContactLock.Lock()
-	s.lastContact = time.Now()
-	s.lastContactLock.Unlock()
-}
-
-// replicate goroutine长期运行，它将日志条目复制到一个特定的follower。
-// 对每个follower启动一个replicate  ，承担心跳、日志同步的职责
-func (r *Raft) replicate(s *followerReplication) {
-	// 开启异步心跳请求
-	stopHeartbeat := make(chan struct{})
-	defer close(stopHeartbeat)
-	r.goFunc(func() { r.heartbeat(s, stopHeartbeat) }) // 心跳检测
-
-	//	 以下是日志复制
-RPC:
-	shouldStop := false // 应该停止
-	for !shouldStop {
-		select {
-		case maxIndex := <-s.stopCh:
-			// 尽最大努力复制到这个索引
-			if maxIndex > 0 {
-				r.replicateTo(s, maxIndex)
-			}
-			return
-		case deferErr := <-s.triggerDeferErrorCh:
-			lastLogIdx, _ := r.getLastLog()
-			shouldStop = r.replicateTo(s, lastLogIdx)
-			if !shouldStop {
-				deferErr.respond(nil)
-			} else {
-				deferErr.respond(fmt.Errorf("复制失败"))
-			}
-		case <-s.triggerCh: // 有新的日志产生
-			_ = r.dispatchLogs
-			// 获取当前日志库的最新索引
-			lastLogIdx, _ := r.getLastLog() // 之前存储了一条Type:LogConfiguration数据  ----> 1
-			shouldStop = r.replicateTo(s, lastLogIdx)
-
-		// 这不是我们的心跳机制，而是为了确保在筏式提交停止自然流动时，跟随者能迅速了解领导者的提交索引。
-		// 实际的心跳不能做到这一点，以保持它们不被跟随者的磁盘IO所阻挡。
-		// See https://github.com/hashicorp/raft/issues/282.
-		case <-randomTimeout(r.config().CommitTimeout):
-			lastLogIdx, _ := r.getLastLog()
-			shouldStop = r.replicateTo(s, lastLogIdx)
-		}
-
-		// 如果事情看起来很健康，就切换到管道模式
-		if !shouldStop && s.allowPipeline { // 走到这的时候是不支持
-			goto PIPELINE
-		}
-	}
-	return
-
-PIPELINE:
-	// 禁用,直到重新启用
-	s.allowPipeline = false
-	s.peerLock.RLock()
-	peer := s.peer
-	s.peerLock.RUnlock()
-	// 使用管道进行复制以获得高性能。这种方法不能优雅地从错误中恢复，所以我们在失败时退回到标准模式。
-	if err := r.pipelineReplicate(s); err != nil { // 会阻塞的
-		if err != ErrPipelineReplicationNotSupported {
-			r.logger.Error("不能开启管道复制数据到", "peer", peer, "error", err)
-		}
-	} else {
-		// 记录管道的启动和停止
-		r.logger.Info("流水线复制已开启", "follower node", peer)
-	}
-	goto RPC
-}
-
-// replicateTo 复制到最新的索引；   用于更新follower副本的日志索引
-func (r *Raft) replicateTo(s *followerReplication, lastIndex uint64) (shouldStop bool) {
-	var req AppendEntriesRequest
-	var resp AppendEntriesResponse
-	var peer Server
-
-START:
-	// 防止错误时重试率过高，等一会儿
-	if s.failures > 0 {
-		select {
-		case <-time.After(backoff(failureWait, s.failures, maxFailureScale)):
-		case <-r.shutdownCh:
-		}
-	}
-
-	s.peerLock.RLock()
-	peer = s.peer
-	s.peerLock.RUnlock()
-
-	// 填充req需要携带的内容
-	//  一下子 产生了太多的日志，生成了新的快照，旧的索引A被干掉，现在最早的索引是B
-	// s.nextIndex 还是启动时的索引，A
-	// 那么在查找A---> B的日志的时候，就会报 ErrLogNotFound
-	// TODO 什么时候打的快照呢？还有什么其他情况
-	if err := r.setupAppendEntries(s, &req, atomic.LoadUint64(&s.nextIndex), lastIndex); err == ErrLogNotFound {
-		goto SendSnap
-	} else if err != nil {
-		// 其他错误
-		return
-	}
-	// 发起请求调用
-	if err := r.trans.AppendEntries(peer.ID, peer.Address, &req, &resp); err != nil {
-		// 失败的情况,
-		// Follower 数据落后于本节点
-		r.logger.Error("appendEntries失败", "peer", peer, "error", err)
-		s.failures++
-		return
-	}
-	// 开始新的任期，停止运行
-	if resp.Term > req.Term {
-		r.handleStaleTerm(s)
-		return true
-	}
-
-	// 更新与follower的通信时间
-	s.setLastContact()
-
-	if resp.Success {
-		// 更新副本状态
-		updateLastAppended(s, &req)
-		// 清理失败计数、允许管道传输
-		s.failures = 0
-		s.allowPipeline = true
-	} else {
-		atomic.StoreUint64(&s.nextIndex, max(min(s.nextIndex-1, resp.LastLog+1), 1))
-		if resp.NoRetryBackoff {
-			s.failures = 0
-		} else {
-			s.failures++
-		}
-		r.logger.Warn("拒绝appendEntries，发送旧的日志", "peer", peer, "next", atomic.LoadUint64(&s.nextIndex))
-	}
-
-CheckMore:
-	// Poll the stop channel here in case we are looping and have been asked
-	// to stop, or have stepped down as leader. Even for the best effort case
-	// where we are asked to replicate to a given index and then shutdown,
-	// it's better to not loop in here to send lots of entries to a straggler
-	// that's leaving the cluster anyways.
-	select {
-	case <-s.stopCh:
-		return true
-	default:
-	}
-
-	// Check if there are more logs to replicate
-	if atomic.LoadUint64(&s.nextIndex) <= lastIndex {
-		goto START
-	}
-	return
-
-	//	 当获取日志失败,通常是因为follower落后太多，我们必须用快照来代替。
-SendSnap:
-	if stop, err := r.sendLatestSnapshot(s); stop {
-		return true
-	} else if err != nil {
-		r.logger.Error("发送快照失败", "peer", peer, "error", err)
-		return
-	}
-
-	// 检查是否有更多需要复制的内容
-	goto CheckMore
-}
-
-// sendLatestSnapshot is used to send the latest snapshot we have
-// down to our follower.
+// sendLatestSnapshot 用来发送我们最新的快照到Follower
 func (r *Raft) sendLatestSnapshot(s *followerReplication) (bool, error) {
-	// Get the snapshots
 	snapshots, err := r.snapshots.List()
 	if err != nil {
-		r.logger.Error("failed to list snapshots", "error", err)
+		r.logger.Error("获取快照列表失败", "error", err)
 		return false, err
 	}
 
-	// Check we have at least a single snapshot
 	if len(snapshots) == 0 {
 		return false, fmt.Errorf("no snapshots found")
 	}
 
-	// Open the most recent snapshot
+	// 打开最新的快照
 	snapID := snapshots[0].ID
 	meta, snapshot, err := r.snapshots.Open(snapID)
 	if err != nil {
@@ -339,183 +142,96 @@ func (r *Raft) sendLatestSnapshot(s *followerReplication) (bool, error) {
 	return false, nil
 }
 
-// heartbeat 用于定期调用对等体上的AppendEntries，以确保它们不会超时。这是与replicate()异步进行的，因为该例程有可能在磁盘IO上被阻塞。
-func (r *Raft) heartbeat(s *followerReplication, stopCh chan struct{}) {
-	var failures uint64
-	req := AppendEntriesRequest{
-		RPCHeader: r.getRPCHeader(),                           // 当前协议版本
-		Term:      s.currentTerm,                              // leader 任期
-		Leader:    r.trans.EncodePeer(r.localID, r.localAddr), // 这里就是把localAddr string  变成了[]byte
-	}
+// ----------------------------------OVER--------------------------------------------
+
+// replicateTo 复制到最新的索引；   用于更新follower副本的日志索引,同一个节点不是并发调用的
+// 非管道模式
+func (r *Raft) replicateTo(s *followerReplication, lastIndex uint64) (shouldStop bool) {
+	var req AppendEntriesRequest
 	var resp AppendEntriesResponse
-	for {
-		select {
-		case <-s.notifyCh: // 心跳主动通知
-		case <-randomTimeout(r.config().HeartbeatTimeout / 10): //定时  100ms
-		case <-stopCh:
-			return
-		}
+	var peer Server
 
-		s.peerLock.RLock()
-		peer := s.peer
-		s.peerLock.RUnlock()
-		// 发送追加日志请求
-		if err := r.trans.AppendEntries(peer.ID, peer.Address, &req, &resp); err != nil {
-			r.logger.Error("心跳失败", "peer", peer.Address, "error", err)
-			r.observe(FailedHeartbeatObservation{PeerID: peer.ID, LastContact: s.LastContact()})
-			failures++
-			select {
-			case <-time.After(backoff(failureWait, failures, maxFailureScale)):
-			case <-stopCh:
-			}
-		} else {
-			r.Ph(&req, &resp) // 打印信息
-			if failures > 0 {
-				r.observe(ResumedHeartbeatObservation{PeerID: peer.ID})
-			}
-			s.setLastContact()
-			failures = 0
-			// 重复的信息。保留是为了向后兼容。
-			s.notifyAll(resp.Success)
+START:
+	// 防止错误时重试率过高，等一会儿
+	if s.failures > 0 {
+		select {
+		case <-time.After(backoff(failureWait, s.failures, maxFailureScale)):
+		case <-r.shutdownCh:
 		}
 	}
-}
 
-// pipelineReplicate
-// 是在我们已经与Follower同步了我们的状态，并且想切换到更高性能的管道复制模式时使用的。
-// 我们只对AppendEntries命令进行流水线处理，如果我们遇到错误，我们就回到标准的复制模式，这样可以处理更复杂的情况。
-func (r *Raft) pipelineReplicate(s *followerReplication) error {
-	fmt.Println("[***pipelineReplicate***]")
 	s.peerLock.RLock()
-	peer := s.peer // follower节点
+	peer = s.peer
 	s.peerLock.RUnlock()
-	// 开启了一个处理pipeline响应的goroutine raft/net_transport.go:682
-	pipeline, err := r.trans.AppendEntriesPipeline(peer.ID, peer.Address)
-	_ = pipeline.(*netPipeline).decodeResponses
-	if err != nil {
-		return err
+	err := r.setupAppendEntries(s, &req, atomic.LoadUint64(&s.nextIndex), lastIndex)
+	// 填充req需要携带的内容
+	//  一下子 产生了太多的日志，生成了新的快照，旧的索引A被干掉，现在最早的索引是B
+	// s.nextIndex 还是启动时的索引，A
+	// 那么在查找A---> B的日志的时候，就会报 ErrLogNotFound
+
+	if err == ErrLogNotFound { // 在读取日志时没有查到
+		goto SendSnap // 只有这一种情况，会触发sendLatestSnapshot
+	} else if err != nil {
+		// 其他错误
+		return
 	}
-	defer pipeline.Close()
+	// 发起请求调用
+	if err := r.trans.AppendEntries(peer.ID, peer.Address, &req, &resp); err != nil {
+		// 失败的情况,
+		// Follower 数据落后于本节点
+		r.logger.Error("appendEntries失败", "peer", peer, "error", err)
+		s.failures++
+		return
+	}
+	// 开始新的任期，停止运行
+	if resp.Term > req.Term {
+		r.handleStaleTerm(s)
+		return true
+	}
 
-	// 创建停止、结束 channel
-	stopCh := make(chan struct{})
-	finishCh := make(chan struct{})
+	// 更新与follower的通信时间
+	s.setLastContact()
 
-	// 启动一个专门的解码器
-	r.goFunc(func() { r.pipelineDecode(s, pipeline, stopCh, finishCh) })
-
-	// 在最后一个好的NextIndex处开始 管道发送
-	nextIndex := atomic.LoadUint64(&s.nextIndex)
-
-	shouldStop := false
-SEND:
-	for !shouldStop {
-		select {
-		case <-finishCh:
-			break SEND
-		case maxIndex := <-s.stopCh:
-			// 尽最大努力复制到这个索引
-			if maxIndex > 0 {
-				r.pipelineSend(s, pipeline, &nextIndex, maxIndex)
-			}
-			break SEND
-		case deferErr := <-s.triggerDeferErrorCh:
-			lastLogIdx, _ := r.getLastLog()
-			shouldStop = r.pipelineSend(s, pipeline, &nextIndex, lastLogIdx)
-			if !shouldStop {
-				deferErr.respond(nil)
-			} else {
-				deferErr.respond(fmt.Errorf("复制出错"))
-			}
-		case <-s.triggerCh:
-			lastLogIdx, _ := r.getLastLog()
-			shouldStop = r.pipelineSend(s, pipeline, &nextIndex, lastLogIdx)
-		case <-randomTimeout(r.config().CommitTimeout):
-			lastLogIdx, _ := r.getLastLog()
-			shouldStop = r.pipelineSend(s, pipeline, &nextIndex, lastLogIdx)
+	if resp.Success {
+		// 更新副本状态
+		updateLastAppended(s, &req)
+		// 清理失败计数、允许管道传输
+		s.failures = 0
+		s.allowPipeline = true
+	} else {
+		atomic.StoreUint64(&s.nextIndex, max(min(s.nextIndex-1, resp.LastLog+1), 1))
+		if resp.NoRetryBackoff {
+			s.failures = 0
+		} else {
+			s.failures++
 		}
+		r.logger.Warn("拒绝appendEntries，发送旧的日志", "peer", peer, "next", atomic.LoadUint64(&s.nextIndex))
 	}
 
-	// 停止解码器，等待结束
-	close(stopCh)
+CheckMore:
 	select {
-	case <-finishCh:
-	case <-r.shutdownCh:
-	}
-	return nil
-}
-
-// pipelineSend is used to send data over a pipeline. It is a helper to
-// pipelineReplicate.
-func (r *Raft) pipelineSend(s *followerReplication, p AppendPipeline, nextIdx *uint64, lastIndex uint64) (shouldStop bool) {
-	// Create a new append request
-	req := new(AppendEntriesRequest)
-	if err := r.setupAppendEntries(s, req, *nextIdx, lastIndex); err != nil {
+	case <-s.stopCh:
 		return true
+	default:
 	}
 
-	// Pipeline the append entries
-	if _, err := p.AppendEntries(req, new(AppendEntriesResponse)); err != nil {
-		r.logger.Error("failed to pipeline appendEntries", "peer", s.peer, "error", err)
+	// 检查是否有更多的日志要复制到follower
+	if atomic.LoadUint64(&s.nextIndex) <= lastIndex {
+		goto START
+	}
+	return
+
+	//	 当获取日志失败,通常是因为follower落后太多，我们必须用快照来代替。
+SendSnap:
+	if stop, err := r.sendLatestSnapshot(s); stop {
 		return true
+	} else if err != nil {
+		r.logger.Error("发送快照失败", "peer", peer, "error", err)
+		return
 	}
 
-	// Increase the next send log to avoid re-sending old logs
-	if n := len(req.Entries); n > 0 {
-		last := req.Entries[n-1]
-		atomic.StoreUint64(nextIdx, last.Index+1)
-	}
-	return false
-}
-
-// pipelineDecode is used to decode the responses of pipelined requests.
-func (r *Raft) pipelineDecode(s *followerReplication, p AppendPipeline, stopCh, finishCh chan struct{}) {
-	defer close(finishCh)
-	respCh := p.Consumer()
-	for {
-		select {
-		case ready := <-respCh:
-			s.peerLock.RLock()
-			s.peerLock.RUnlock()
-
-			req, resp := ready.Request(), ready.Response()
-
-			// Check for a newer term, stop running
-			if resp.Term > req.Term {
-				r.handleStaleTerm(s)
-				return
-			}
-
-			// Update the last contact
-			s.setLastContact()
-
-			// Abort pipeline if not successful
-			if !resp.Success {
-				return
-			}
-
-			// Update our replication state
-			updateLastAppended(s, req)
-		case <-stopCh:
-			return
-		}
-	}
-}
-
-// setupAppendEntries 是用来设置一个追加条目的请求。
-func (r *Raft) setupAppendEntries(s *followerReplication, req *AppendEntriesRequest, nextIndex, lastIndex uint64) error {
-	// nextIndex 下一条要发送给follower的日志索引
-	req.RPCHeader = r.getRPCHeader()
-	req.Term = s.currentTerm                                 // leader 的任期
-	req.Leader = r.trans.EncodePeer(r.localID, r.localAddr)  // localAddr
-	req.LeaderCommitIndex = r.getCommitIndex()               // leader最新的提交索引
-	if err := r.setPreviousLog(req, nextIndex); err != nil { // 设置leader已有、follower未有的日志索引
-		return err
-	}
-	if err := r.setNewLogs(req, nextIndex, lastIndex); err != nil { //从db读取指定索引段的日志，并将其添加到req
-		return err
-	}
-	return nil
+	// 检查是否有更多需要复制的内容
+	goto CheckMore
 }
 
 // OK
@@ -549,7 +265,7 @@ func (r *Raft) setNewLogs(req *AppendEntriesRequest, nextIndex, lastIndex uint64
 	req.Entries = make([]*Log, 0, maxAppendEntries)
 
 	maxIndex := min(nextIndex+uint64(maxAppendEntries)-1, lastIndex) // 日志最大索引 要发送哪
-
+	fmt.Println("日志复制信息:-----> ", nextIndex, maxIndex)
 	for i := nextIndex; i <= maxIndex; i++ {
 		oldLog := new(Log)
 		if err := r.logs.GetLog(i, oldLog); err != nil {
@@ -561,25 +277,40 @@ func (r *Raft) setNewLogs(req *AppendEntriesRequest, nextIndex, lastIndex uint64
 	return nil
 }
 
-// handleStaleTerm  当follower的任期大于当前leader节点的任期
-func (r *Raft) handleStaleTerm(s *followerReplication) {
-	r.logger.Error("对端有一个新的任期，停止复制", "peer", s.peer)
-	s.notifyAll(false) // 不再是leader
-	asyncNotifyCh(s.stepDown)
+// notifyAll 是用来通知所有等待中的verifyFuture。如果Follower认为我们仍然是领导者。
+func (s *followerReplication) notifyAll(leader bool) {
+	// 清除等待通知，尽量减少锁定时间
+	s.notifyLock.Lock()
+	n := s.notify
+	s.notify = make(map[*verifyFuture]struct{})
+	s.notifyLock.Unlock()
+
+	// 确认我们的选举权
+	for v := range n {
+		v.vote(leader)
+	}
 }
 
-// updateLastAppended 用于在 AppendEntries RPC 成功后更新跟随者的复制状态。
-func updateLastAppended(s *followerReplication, req *AppendEntriesRequest) {
-	// Mark any inflight logs as committed
-	// 将任何机上记录标记为已提交
-	logs := req.Entries
-	if len(logs) > 0 {
-		last := logs[len(logs)-1]
-		atomic.StoreUint64(&s.nextIndex, last.Index+1)
-		s.commitment.match(s.peer.ID, last.Index)
-	}
-	// 通知所有Future，依然是leader
-	s.notifyAll(true)
+// cleanNotify 用于删除待验证的请求
+func (s *followerReplication) cleanNotify(v *verifyFuture) {
+	s.notifyLock.Lock()
+	delete(s.notify, v)
+	s.notifyLock.Unlock()
+}
+
+// LastContact 返回最新的通信时间
+func (s *followerReplication) LastContact() time.Time {
+	s.lastContactLock.RLock()
+	last := s.lastContact
+	s.lastContactLock.RUnlock()
+	return last
+}
+
+// setLastContact 设置与follower最新的通信时间
+func (s *followerReplication) setLastContact() {
+	s.lastContactLock.Lock()
+	s.lastContact = time.Now()
+	s.lastContactLock.Unlock()
 }
 
 // Ph 打印心跳的信息
@@ -603,4 +334,270 @@ func (r *Raft) Ph(req *AppendEntriesRequest, resp *AppendEntriesResponse) {
 	r.logger.Info("心跳请求", "=:", fmt.Sprintf("%+v", a))
 	r.logger.Info("心跳响应", "=:", fmt.Sprintf("%+v", resp))
 
+}
+
+// heartbeat 用于定期调用对等体上的AppendEntries，以确保它们不会超时。这是与replicate()异步进行的，因为该例程有可能在磁盘IO上被阻塞。
+func (r *Raft) heartbeat(s *followerReplication, stopCh chan struct{}) {
+	var failures uint64
+	req := AppendEntriesRequest{
+		RPCHeader: r.getRPCHeader(),                           // 当前协议版本
+		Term:      s.currentTerm,                              // leader 任期
+		Leader:    r.trans.EncodePeer(r.localID, r.localAddr), // 这里就是把localAddr string  变成了[]byte
+	}
+	var resp AppendEntriesResponse
+	for {
+		select {
+		case <-s.notifyCh: // 心跳主动通知
+		case <-randomTimeout(r.config().HeartbeatTimeout / 10): //定时  100ms
+		//在100ms内 每循环一次,就会产生一个timer,如果循环太多，可能导致gc飙升
+		case <-stopCh:
+			return
+		}
+		s.peerLock.RLock()
+		peer := s.peer
+		s.peerLock.RUnlock()
+		// 发送追加日志请求
+		if err := r.trans.AppendEntries(peer.ID, peer.Address, &req, &resp); err != nil {
+			r.logger.Error("心跳失败", "peer", peer.Address, "error", err)
+			r.observe(FailedHeartbeatObservation{PeerID: peer.ID, LastContact: s.LastContact()})
+			failures++
+			select {
+			case <-time.After(backoff(failureWait, failures, maxFailureScale)):
+			case <-stopCh:
+			}
+		} else {
+			r.Ph(&req, &resp) // 打印信息
+			if failures > 0 {
+				r.observe(ResumedHeartbeatObservation{PeerID: peer.ID})
+			}
+			s.setLastContact()
+			failures = 0
+			// 重复的信息。保留是为了向后兼容。
+			s.notifyAll(resp.Success)
+		}
+	}
+}
+
+// replicate goroutine长期运行，它将日志条目复制到一个特定的follower。
+// 对每个follower启动一个replicate  ，承担心跳、日志同步的职责
+// stopCh|triggerDeferErrorCh|triggerCh|CommitTimeout 都会触发replicateTo
+func (r *Raft) replicate(s *followerReplication) {
+	// 开启异步心跳请求
+	stopHeartbeat := make(chan struct{})
+	defer close(stopHeartbeat)
+	r.goFunc(func() { r.heartbeat(s, stopHeartbeat) }) // 心跳检测,并对verifyFuture.vote++
+	// 与日志同步是分开调用的
+	//	 以下是日志复制
+RPC:
+	shouldStop := false // 应该停止
+	for !shouldStop {
+		select {
+		case maxIndex := <-s.stopCh:
+			// 尽最大努力复制到这个索引
+			if maxIndex > 0 {
+				r.replicateTo(s, maxIndex)
+			}
+			return
+		case deferErr := <-s.triggerDeferErrorCh:
+			lastLogIdx, _ := r.getLastLog()
+			shouldStop = r.replicateTo(s, lastLogIdx)
+			if !shouldStop {
+				deferErr.respond(nil)
+			} else {
+				deferErr.respond(fmt.Errorf("复制失败"))
+			}
+		case <-s.triggerCh: // 有新的日志产生
+			_ = r.dispatchLogs
+			// 获取当前日志库的最新索引
+			lastLogIdx, _ := r.getLastLog() // 之前存储了一条Type:LogConfiguration数据  ----> 1
+			shouldStop = r.replicateTo(s, lastLogIdx)
+		// 这不是我们的心跳机制，而是为了确保在筏式提交停止自然流动时，跟随者能迅速了解领导者的提交索引。
+		// 实际的心跳不能做到这一点，以保持它们不被跟随者的磁盘IO所阻挡。
+		// See https://github.com/hashicorp/raft/issues/282.
+		case <-randomTimeout(r.config().CommitTimeout):
+			lastLogIdx, _ := r.getLastLog()
+			shouldStop = r.replicateTo(s, lastLogIdx)
+		}
+
+		// 如果事情看起来很健康，就切换到管道模式
+		if !shouldStop && s.allowPipeline { // 走到这的时候是不支持
+			goto PIPELINE
+		}
+	}
+	return
+
+PIPELINE:
+	// 禁用,直到重新启用
+	s.allowPipeline = false
+	s.peerLock.RLock()
+	peer := s.peer
+	s.peerLock.RUnlock()
+	// 使用管道进行复制以获得高性能。这种方法不能优雅地从错误中恢复，所以我们在失败时退回到标准模式。
+	if err := r.pipelineReplicate(s); err != nil { // 会阻塞的
+		if err != ErrPipelineReplicationNotSupported {
+			r.logger.Error("不能开启管道复制数据到", "peer", peer, "error", err)
+		}
+	} else {
+		// 记录管道的启动和停止
+		r.logger.Info("流水线复制已开启", "follower node", peer)
+	}
+	goto RPC
+}
+
+// pipelineDecode 解码响应, 更新状态、commit index、检查是不是leader
+func (r *Raft) pipelineDecode(s *followerReplication, p AppendPipeline, stopCh, finishCh chan struct{}) {
+	defer close(finishCh)
+	respCh := p.Consumer()
+	for {
+		select {
+		case ready := <-respCh:
+			s.peerLock.RLock()
+			s.peerLock.RUnlock()
+			// 请求参数、响应
+			req, resp := ready.Request(), ready.Response()
+
+			// 检查是否有新的任期
+			if resp.Term > req.Term {
+				r.handleStaleTerm(s) // 设置当前角色为follower ,取消所有verifyFuture
+				return
+			}
+
+			// 更新最新的通信时间
+			s.setLastContact()
+
+			// 退出管道模式
+			if !resp.Success {
+				return
+			}
+
+			// 更新复制状态
+			updateLastAppended(s, req)
+		case <-stopCh:
+			return
+		}
+	}
+}
+
+// setupAppendEntries 是用来设置一个追加条目的请求。管道模式、非管道模式都会调用这个函数
+func (r *Raft) setupAppendEntries(s *followerReplication, req *AppendEntriesRequest, nextIndex, lastIndex uint64) error {
+	// nextIndex 下一条要发送给follower的日志索引
+	req.RPCHeader = r.getRPCHeader()
+	req.Term = s.currentTerm                                 // leader 的任期
+	req.Leader = r.trans.EncodePeer(r.localID, r.localAddr)  // localAddr
+	req.LeaderCommitIndex = r.getCommitIndex()               // leader最新的提交索引
+	if err := r.setPreviousLog(req, nextIndex); err != nil { // 设置leader已有、follower未有的日志索引
+		return err
+	}
+	if err := r.setNewLogs(req, nextIndex, lastIndex); err != nil { //从db读取指定索引段的日志，并将其添加到req
+		return err
+	}
+	return nil
+}
+
+// updateLastAppended 用于在 AppendEntries RPC 成功后更新跟随者的复制状态。
+func updateLastAppended(s *followerReplication, req *AppendEntriesRequest) {
+	// Mark any inflight logs as committed
+	// 将任何机上记录标记为已提交
+	logs := req.Entries
+	if len(logs) > 0 {
+		last := logs[len(logs)-1]
+		atomic.StoreUint64(&s.nextIndex, last.Index+1)
+		s.commitment.match(s.peer.ID, last.Index)
+	}
+	// 通知所有Future，依然是leader
+	s.notifyAll(true)
+}
+
+// handleStaleTerm  当follower的任期大于当前leader节点的任期
+func (r *Raft) handleStaleTerm(s *followerReplication) {
+	r.logger.Error("对端有一个新的任期，停止复制", "peer", s.peer)
+	s.notifyAll(false) // 不再是leader
+	asyncNotifyCh(s.stepDown)
+}
+
+// pipelineReplicate
+// 是在我们已经与Follower同步了我们的状态，并且想切换到更高性能的管道复制模式时使用的。
+// 我们只对AppendEntries命令进行流水线处理，如果我们遇到错误，我们就回到标准的复制模式，这样可以处理更复杂的情况。
+// stopCh|triggerDeferErrorCh|triggerCh|CommitTimeout 都会触发replicateTo
+func (r *Raft) pipelineReplicate(s *followerReplication) error {
+	fmt.Println("[***pipelineReplicate***]")
+	s.peerLock.RLock()
+	peer := s.peer // follower节点
+	s.peerLock.RUnlock()
+	// 开启了一个处理pipeline响应的goroutine raft/net_transport.go:682
+	pipeline, err := r.trans.AppendEntriesPipeline(peer.ID, peer.Address)
+	_ = pipeline.(*netPipeline).decodeResponses
+	if err != nil {
+		return err
+	}
+	defer pipeline.Close()
+
+	// 创建停止、结束 channel
+	stopCh := make(chan struct{})   // 2种情况： 退出管道模式;finishCh关闭
+	finishCh := make(chan struct{}) // 3种情况: follower任期>当前任期;管道传输出错;stopCh关闭
+
+	// 启动一个专门的解码器
+	r.goFunc(func() { r.pipelineDecode(s, pipeline, stopCh, finishCh) })
+
+	nextIndex := atomic.LoadUint64(&s.nextIndex)
+
+	shouldStop := false
+SEND:
+	for !shouldStop {
+		select {
+		case <-finishCh:
+			break SEND
+		case maxIndex := <-s.stopCh: // 节点移除
+			// 尽最大努力复制到这个索引
+			if maxIndex > 0 {
+				r.pipelineSend(s, pipeline, &nextIndex, maxIndex)
+			}
+			break SEND
+		case deferErr := <-s.triggerDeferErrorCh:
+			lastLogIdx, _ := r.getLastLog()
+			shouldStop = r.pipelineSend(s, pipeline, &nextIndex, lastLogIdx)
+			if !shouldStop {
+				deferErr.respond(nil)
+			} else {
+				deferErr.respond(fmt.Errorf("复制出错"))
+			}
+		case <-s.triggerCh:
+			lastLogIdx, _ := r.getLastLog()
+			shouldStop = r.pipelineSend(s, pipeline, &nextIndex, lastLogIdx)
+		case <-randomTimeout(r.config().CommitTimeout):
+			lastLogIdx, _ := r.getLastLog()
+			shouldStop = r.pipelineSend(s, pipeline, &nextIndex, lastLogIdx)
+		}
+	}
+
+	// 停止解码器，等待结束
+	close(stopCh)
+	select {
+	case <-finishCh:
+	case <-r.shutdownCh:
+	}
+	return nil
+}
+
+// pipelineSend 发送数据
+func (r *Raft) pipelineSend(s *followerReplication, p AppendPipeline, nextIdx *uint64, lastIndex uint64) (shouldStop bool) {
+	// 非管道模式  r.replicateTo(s, lastLogIdx)
+	// nextIndex := atomic.LoadUint64(&s.nextIndex)
+	req := new(AppendEntriesRequest)
+	if err := r.setupAppendEntries(s, req, *nextIdx, lastIndex); err != nil {
+		return true
+	}
+
+	// 对追加条目进行流水线处理
+	if _, err := p.AppendEntries(req, new(AppendEntriesResponse)); err != nil {
+		r.logger.Error("失败 pipeline appendEntries", "peer", s.peer, "error", err)
+		return true
+	}
+
+	// 增加下次发送日志以避免重新发送旧日志
+	if n := len(req.Entries); n > 0 {
+		last := req.Entries[n-1]
+		atomic.StoreUint64(nextIdx, last.Index+1)
+	}
+	return false
 }
