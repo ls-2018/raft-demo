@@ -100,7 +100,7 @@ func (s *InmemSnapshotSink) Close() error {
 	return nil
 }
 
-// ID returns the ID of the SnapshotMeta
+// ID 返回快照的ID
 func (s *InmemSnapshotSink) ID() string {
 	return s.meta.ID
 }

@@ -394,16 +394,15 @@ func (n *NetworkTransport) genericRPC(id ServerID, target ServerAddress, rpcType
 	return err
 }
 
-// InstallSnapshot implements the Transport interface.
+// InstallSnapshot 用于将快照下推给follower。从ReadCloser读取数据并推到客户端。
 func (n *NetworkTransport) InstallSnapshot(id ServerID, target ServerAddress, args *InstallSnapshotRequest, resp *InstallSnapshotResponse, data io.Reader) error {
-	// Get a conn, always close for InstallSnapshot
 	conn, err := n.getConnFromAddressProvider(id, target)
 	if err != nil {
 		return err
 	}
 	defer conn.Release()
 
-	// Set a deadline, scaled by request size
+	// 设定一个截止日期，根据请求的大小进行调整
 	if n.timeout > 0 {
 		timeout := n.timeout * time.Duration(args.Size/int64(n.TimeoutScale))
 		if timeout < n.timeout {
@@ -412,12 +411,10 @@ func (n *NetworkTransport) InstallSnapshot(id ServerID, target ServerAddress, ar
 		conn.conn.SetDeadline(time.Now().Add(timeout))
 	}
 
-	// Send the RPC
 	if err = sendRPC(conn, rpcInstallSnapshot, args); err != nil {
 		return err
 	}
 
-	// Stream the state
 	if _, err = io.Copy(conn.w, data); err != nil {
 		return err
 	}

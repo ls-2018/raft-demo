@@ -59,10 +59,8 @@ type Config struct {
 	// we can become a leader of a cluster containing only this node.
 	ShutdownOnRemove bool
 
-	// TrailingLogs controls how many logs we leave after a snapshot. This is used
-	// so that we can quickly replay logs on a follower instead of being forced to
-	// send an entire snapshot. The value passed here is the initial setting used.
-	// This can be tuned during operation using ReloadConfig.
+	// TrailingLogs 控制快照后留下多少日志。这样我们就可以在一个Follower上快速重放日志，而不是被迫发送一个完整的快照。
+	// 这里传递的值是使用的初始设置。这可以在操作期间使用ReloadConfig进行调优。
 	TrailingLogs uint64
 
 	// SnapshotInterval

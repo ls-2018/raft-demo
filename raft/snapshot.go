@@ -5,14 +5,11 @@ import (
 	"io"
 )
 
-// SnapshotMeta is for metadata of a snapshot.
+// SnapshotMeta 快照元数据
 type SnapshotMeta struct {
-	// Version is the version number of the snapshot metadata. This does not cover
-	// the application's data in the snapshot, that should be versioned
-	// separately.
 	Version SnapshotVersion
 
-	// ID is opaque to the store, and is used for opening.
+	// ID 快照的唯一标识、文件夹的名字
 	ID string
 
 	// Index and Term store when the snapshot was taken.
@@ -28,20 +25,14 @@ type SnapshotMeta struct {
 	Configuration      Configuration
 	ConfigurationIndex uint64
 
-	// Size is the size of the snapshot in bytes.
+	// Size 快照有多少字节
 	Size int64
 }
 
-// SnapshotStore interface is used to allow for flexible implementations
-// of snapshot storage and retrieval. For example, a client could implement
-// a shared state store such as S3, allowing new nodes to restore snapshots
-// without streaming from the leader.
+// SnapshotStore 接口用于灵活实现快照存储和检索。
+// 例如，客户端可以实现一个共享状态存储(如S3)，允许新节点恢复快照，而无需从leader流。
 type SnapshotStore interface {
-	// Create is used to begin a snapshot at a given index and term, and with
-	// the given committed configuration. The version parameter controls
-	// which snapshot version to create.
-	Create(version SnapshotVersion, index, term uint64, configuration Configuration,
-		configurationIndex uint64, trans Transport) (SnapshotSink, error)
+	Create(version SnapshotVersion, index, term uint64, configuration Configuration, configurationIndex uint64, trans Transport) (SnapshotSink, error)
 
 	// List 是用来列出商店中的可用快照。它应该按降序返回，以最高的索引为先。
 	List() ([]*SnapshotMeta, error)
@@ -191,41 +182,40 @@ func (r *Raft) TakeSnapshot() (string, error) {
 	return sink.ID(), nil
 }
 
-// compactLogs takes the last inclusive index of a snapshot
-// and trims the logs that are no longer needed.
+// compactLogs  获取快照的最后一个日志索引，并删除不再需要的日志。
+// 快照恢复、打快照时 会调用此函数
 func (r *Raft) compactLogs(snapIdx uint64) error {
-	// Determine log ranges to compact
-	minLog, err := r.logs.FirstIndex()
+	// Index 日志当前存储到的位置
+	// 确定要压缩的日志范围
+	minLog, err := r.logs.FirstIndex() // bolt log db
 	if err != nil {
-		return fmt.Errorf("failed to get first log index: %v", err)
+		return fmt.Errorf("获取第一个日志索引失败: %v", err)
 	}
 
-	// Check if we have enough logs to truncate
-	lastLogIdx, _ := r.getLastLog()
+	//检查我们是否有足够的日志来截断
+	lastLogIdx, _ := r.getLastLog() // 200
 
-	// Use a consistent value for trailingLogs for the duration of this method
-	// call to avoid surprising behaviour.
-	trailingLogs := r.config().TrailingLogs
+	// 落后的日志
+	// TODO
+	trailingLogs := r.config().TrailingLogs // 100
 	if lastLogIdx <= trailingLogs {
 		return nil
 	}
+	// 快照索引是100
+	// 但是blot db存储的日志可能是200
 
-	// Truncate up to the end of the snapshot, or `TrailingLogs`
-	// back from the head, which ever is further back. This ensures
-	// at least `TrailingLogs` entries, but does not allow logs
-	// after the snapshot to be removed.
 	maxLog := min(snapIdx, lastLogIdx-trailingLogs)
 
 	if minLog > maxLog {
-		r.logger.Info("no logs to truncate")
+		r.logger.Info("没有要截断的日志")
 		return nil
 	}
 
-	r.logger.Info("compacting logs", "from", minLog, "to", maxLog)
+	r.logger.Info("压缩日志", "from", minLog, "to", maxLog)
 
-	// Compact the logs
+	// 压缩日志
 	if err := r.logs.DeleteRange(minLog, maxLog); err != nil {
-		return fmt.Errorf("log compaction failed: %v", err)
+		return fmt.Errorf("日志压缩失败: %v", err)
 	}
 	return nil
 }

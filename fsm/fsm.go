@@ -35,8 +35,9 @@ func (f *Fsm) Snapshot() (raft.FSMSnapshot, error) {
 	return &f.DataBase, nil
 }
 
-// Restore 集群重启时，需要从快照中恢复数据
+// Restore 集群重启时，需要从快照中恢复数据;接收到快照命令后，恢复
 func (f *Fsm) Restore(old io.ReadCloser) error {
+	f.DataBase.Data = make(map[string]string)
 	read := bufio.NewReader(old)
 	for {
 		c, _, err := read.ReadLine()
@@ -44,6 +45,7 @@ func (f *Fsm) Restore(old io.ReadCloser) error {
 			return nil
 		}
 		var a [2]string
+
 		err = json.Unmarshal(c, &a)
 		if err != nil {
 			return err

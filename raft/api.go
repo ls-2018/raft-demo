@@ -88,6 +88,7 @@ type Raft struct {
 	// 在应用日志时，它接收指向commitTuple结构的指针;
 	// 在恢复快照时接收指向restoreFuture结构的指针。
 	fsmMutateCh chan interface{}
+	// r.installSnapshot
 
 	// fsmSnapshotCh 用来触发新的快照拍摄。
 	fsmSnapshotCh chan *reqSnapshotFuture

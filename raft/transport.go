@@ -40,9 +40,7 @@ type Transport interface {
 	// RequestVote 发送投票请求到目标节点 raft/rpc_call.go:
 	RequestVote(id ServerID, target ServerAddress, args *RequestVoteRequest, resp *RequestVoteResponse) error
 
-	// InstallSnapshot is used to push a snapshot down to a follower. The data is read from
-	// the ReadCloser and streamed to the client.
-	// raft/raft.go:1203
+	// InstallSnapshot 用于将快照下推给follower。从ReadCloser读取数据并推到客户端。
 	InstallSnapshot(id ServerID, target ServerAddress, args *InstallSnapshotRequest, resp *InstallSnapshotResponse, data io.Reader) error
 
 	// EncodePeer 是用来序列化一个节点的地址。

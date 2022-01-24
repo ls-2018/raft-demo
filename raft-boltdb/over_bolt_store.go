@@ -19,7 +19,6 @@ var _ raft.StableStore = &BoltStore{}
 type BoltStore struct {
 	// conn 是数据库的底层句柄。
 	conn *bolt.DB
-
 	// bolt数据库文件的路径
 	path string
 }

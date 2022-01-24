@@ -216,11 +216,10 @@ type reqSnapshotFuture struct {
 	snapshot FSMSnapshot
 }
 
-// restoreFuture is used for requesting an FSM to perform a
-// snapshot restore. Used internally only.
+// restoreFuture 请求FSM进行快照恢复。仅在内部使用。
 type restoreFuture struct {
 	deferError
-	ID string
+	ID string // 快照的ID
 }
 
 // verifyFuture   是用来验证当前节点是否仍然是领导者。

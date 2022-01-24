@@ -54,11 +54,8 @@ func (r *Raft) checkRPCHeader(rpc RPC) error {
 	return nil
 }
 
-// getSnapshotVersion returns the snapshot version that should be used when
-// creating snapshots, given the protocol version in use.
+// OK
 func getSnapshotVersion(protocolVersion ProtocolVersion) SnapshotVersion {
-	// Right now we only have two versions and they are backwards compatible
-	// so we don't need to look at the protocol version.
 	return 1
 }
 

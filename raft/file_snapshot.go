@@ -458,47 +458,47 @@ func (s *FileSnapshotSink) Close() error {
 	return nil
 }
 
-// Cancel is used to indicate an unsuccessful end.
+// Cancel 表示不成功结束。
 func (s *FileSnapshotSink) Cancel() error {
-	// Make sure close is idempotent
+	// 确保close是幂等的
 	if s.closed {
 		return nil
 	}
 	s.closed = true
 
-	// Close the open handles
+	// 关闭句柄，更新CRC校验值
 	if err := s.finalize(); err != nil {
-		s.logger.Error("failed to finalize snapshot", "error", err)
+		s.logger.Error("快照结束失败", "error", err)
 		return err
 	}
 
-	// Attempt to remove all artifacts
+	// 尝试移除保存了的数据【文件夹】
 	return os.RemoveAll(s.dir)
 }
 
-// finalize is used to close all of our resources.
+// finalize 用来关闭我们所有的资源。关闭文件
 func (s *FileSnapshotSink) finalize() error {
-	// Flush any remaining data
+	// 清除所有剩余数据
 	if err := s.buffered.Flush(); err != nil {
 		return err
 	}
 
-	// Sync to force fsync to disk
+	// 异步模式下，确保所有数据都刷到磁盘
 	if !s.noSync {
 		if err := s.stateFile.Sync(); err != nil {
 			return err
 		}
 	}
 
-	// Get the file size
+	// 获取文件大小
 	stat, statErr := s.stateFile.Stat()
 
-	// Close the file
+	//关闭
 	if err := s.stateFile.Close(); err != nil {
 		return err
 	}
 
-	// Set the file size, check after we close
+	// 设置文件大小，关闭后检查
 	if statErr != nil {
 		return statErr
 	}

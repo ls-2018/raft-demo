@@ -122,21 +122,21 @@ func (r *Raft) runFSM() {
 	}
 
 	restore := func(req *restoreFuture) {
-		// Open the snapshot
+		// 打开一个快照
 		meta, source, err := r.snapshots.Open(req.ID)
 		if err != nil {
-			req.respond(fmt.Errorf("failed to open snapshot %v: %v", req.ID, err))
+			req.respond(fmt.Errorf("打开快照失败 %v: %v", req.ID, err))
 			return
 		}
 		defer source.Close()
 
-		// Attempt to restore
+		// 试图恢复
 		if err := fsmRestoreAndMeasure(r.fsm, source); err != nil {
-			req.respond(fmt.Errorf("failed to restore snapshot %v: %v", req.ID, err))
+			req.respond(fmt.Errorf("恢复快照失败 %v: %v", req.ID, err))
 			return
 		}
 
-		// Update the last index and term
+		// 更新最新的索引、任期
 		lastIndex = meta.Index
 		lastTerm = meta.Term
 		req.respond(nil)
@@ -161,7 +161,7 @@ func (r *Raft) runFSM() {
 
 	for {
 		select {
-		case ptr := <-r.fsmMutateCh:
+		case ptr := <-r.fsmMutateCh: // 用来向FSM发送状态变化的更新,恢复快照
 			switch req := ptr.(type) {
 			case []*commitTuple:
 				// 在应用日志时，它接收指向commitTuple结构的指针;

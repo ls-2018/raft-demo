@@ -54,7 +54,7 @@ type followerReplication struct {
 	failures uint64
 
 	// notifyCh 需要发送心跳的channel，用来检查本节点是不是leader
-	notifyCh chan struct{}// 收到消息了
+	notifyCh chan struct{} // 收到消息了
 	// notify  在收到确认信息后，需要解决的回应
 	notify     map[*verifyFuture]struct{} // heartbeat 成功,会对这里的值设置
 	notifyLock sync.Mutex
@@ -89,7 +89,6 @@ func (r *Raft) sendLatestSnapshot(s *followerReplication) (bool, error) {
 	}
 	defer snapshot.Close()
 
-	// Setup the request
 	req := InstallSnapshotRequest{
 		RPCHeader:          r.getRPCHeader(),
 		SnapshotVersion:    meta.Version,
@@ -107,10 +106,10 @@ func (r *Raft) sendLatestSnapshot(s *followerReplication) (bool, error) {
 	peer := s.peer
 	s.peerLock.RUnlock()
 
-	// Make the call
 	var resp InstallSnapshotResponse
+	_ = r.processRPC
 	if err := r.trans.InstallSnapshot(peer.ID, peer.Address, &req, &resp, snapshot); err != nil {
-		r.logger.Error("failed to install snapshot", "id", snapID, "error", err)
+		r.logger.Error("安装快照失败", "id", snapID, "error", err)
 		s.failures++
 		return false, err
 	}
@@ -222,6 +221,7 @@ CheckMore:
 	return
 
 	//	 当获取日志失败,通常是因为follower落后太多，我们必须用快照来代替。
+	//	 比方说leader的db删除了，但是还有快照
 SendSnap:
 	if stop, err := r.sendLatestSnapshot(s); stop {
 		return true

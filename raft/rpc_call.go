@@ -313,44 +313,35 @@ func (r *Raft) requestVote(rpc RPC, req *RequestVoteRequest) {
 
 // installSnapshot Follower状态下，日志落后leader太多
 func (r *Raft) installSnapshot(rpc RPC, req *InstallSnapshotRequest) {
-	// Setup a response
 	resp := &InstallSnapshotResponse{
 		Term:    r.getCurrentTerm(),
 		Success: false,
 	}
 	var rpcErr error
 	defer func() {
-		io.Copy(ioutil.Discard, rpc.Reader) // ensure we always consume all the snapshot data from the stream [see issue #212]
+		io.Copy(ioutil.Discard, rpc.Reader)
+		// 确保我们总是使用来自流的所有快照数据(参见问题#212)
 		rpc.Respond(resp, rpcErr)
 	}()
 
-	// Sanity check the version
-	if req.SnapshotVersion < SnapshotVersionMin ||
-		req.SnapshotVersion > SnapshotVersionMax {
-		rpcErr = fmt.Errorf("unsupported snapshot version %d", req.SnapshotVersion)
+	if req.SnapshotVersion < SnapshotVersionMin || req.SnapshotVersion > SnapshotVersionMax {
+		rpcErr = fmt.Errorf("不支持的快照版本 %d", req.SnapshotVersion)
 		return
 	}
-
-	// Ignore an older term
+	// req.Term leader端存储的follower任期
 	if req.Term < r.getCurrentTerm() {
-		r.logger.Info("ignoring installSnapshot request with older term than current term",
-			"request-term", req.Term,
-			"current-term", r.getCurrentTerm())
+		r.logger.Info("忽略比当前期限更早的installSnapshot请求", "request-term", req.Term, "current-term", r.getCurrentTerm())
 		return
 	}
 
-	// Increase the term if we see a newer one
 	if req.Term > r.getCurrentTerm() {
-		// Ensure transition to follower
 		r.setState(Follower)
 		r.setCurrentTerm(req.Term)
 		resp.Term = req.Term
 	}
 
-	// Save the current leader
 	r.setLeader(r.trans.DecodePeer(req.Leader))
 
-	// Create a new snapshot
 	var reqConfiguration Configuration
 	var reqConfigurationIndex uint64
 	if req.SnapshotVersion > 0 {
@@ -359,80 +350,78 @@ func (r *Raft) installSnapshot(rpc RPC, req *InstallSnapshotRequest) {
 	} else {
 		reqConfiguration, rpcErr = decodePeers(req.Peers, r.trans)
 		if rpcErr != nil {
-			r.logger.Error("failed to install snapshot", "error", rpcErr)
+			r.logger.Error("安装快照失败", "error", rpcErr)
 			return
 		}
 		reqConfigurationIndex = req.LastLogIndex
 	}
-	version := getSnapshotVersion(r.protocolVersion)
-	sink, err := r.snapshots.Create(version, req.LastLogIndex, req.LastLogTerm,
-		reqConfiguration, reqConfigurationIndex, r.trans)
+	version := getSnapshotVersion(r.protocolVersion) // 1
+	sink, err := r.snapshots.Create(version, req.LastLogIndex, req.LastLogTerm, reqConfiguration, reqConfigurationIndex, r.trans)
 	if err != nil {
-		r.logger.Error("failed to create snapshot to install", "error", err)
-		rpcErr = fmt.Errorf("failed to create snapshot: %v", err)
+		r.logger.Error("创建快照失败", "error", err)
+		rpcErr = fmt.Errorf("创建快照失败: %v", err)
 		return
 	}
 
-	// Spill the remote snapshot to disk
+	// 将远程快照存储到磁盘
 	n, err := io.Copy(sink, rpc.Reader)
 	if err != nil {
-		sink.Cancel()
-		r.logger.Error("failed to copy snapshot", "error", err)
+		sink.Cancel() // 关闭、清除文件
+		r.logger.Error("拷贝快照失败", "error", err)
 		rpcErr = err
 		return
 	}
 
-	// Check that we received it all
+	//检查一下我们是否都收到了
 	if n != req.Size {
-		sink.Cancel()
-		r.logger.Error("failed to receive whole snapshot",
-			"received", hclog.Fmt("%d / %d", n, req.Size))
-		rpcErr = fmt.Errorf("short read")
+		sink.Cancel() // 关闭、清除文件
+		r.logger.Error("接收完整快照失败", "received", hclog.Fmt("%d / %d", n, req.Size))
+		rpcErr = fmt.Errorf("数据不够")
 		return
 	}
 
-	// Finalize the snapshot
+	// 完成快照
 	if err := sink.Close(); err != nil {
-		r.logger.Error("failed to finalize snapshot", "error", err)
+		r.logger.Error("完成快照失败", "error", err)
 		rpcErr = err
 		return
 	}
-	r.logger.Info("copied to local snapshot", "bytes", n)
+	r.logger.Info("拷贝到了本地快照", "bytes", n)
 
-	// Restore snapshot
+	// 重置快照
 	future := &restoreFuture{ID: sink.ID()}
 	future.ShutdownCh = r.shutdownCh
 	future.init()
 	select {
 	case r.fsmMutateCh <- future:
+		_ = r.runFSM
 	case <-r.shutdownCh:
 		future.respond(ErrRaftShutdown)
 		return
 	}
 
-	// Wait for the restore to happen
-	if err := future.Error(); err != nil {
-		r.logger.Error("failed to restore snapshot", "error", err)
+	// 等待恢复发生
+	if err := future.Error(); err != nil { // 阻塞
+		r.logger.Error("恢复快照失败", "error", err)
 		rpcErr = err
 		return
 	}
 
-	// Update the lastApplied so we don't replay old logs
+	// 更新lastApplied，这样我们就不会重播旧日志了
 	r.setLastApplied(req.LastLogIndex)
 
-	// Update the last stable snapshot info
+	// 更新最新的快照
 	r.setLastSnapshot(req.LastLogIndex, req.LastLogTerm)
 
-	// Restore the peer set
 	r.setLatestConfiguration(reqConfiguration, reqConfigurationIndex)
 	r.setCommittedConfiguration(reqConfiguration, reqConfigurationIndex)
 
-	// Compact logs, continue even if this fails
+	// 压缩日志，即使失败也要继续
 	if err := r.compactLogs(req.LastLogIndex); err != nil {
-		r.logger.Error("failed to compact logs", "error", err)
+		r.logger.Error("压缩日志失败", "error", err)
 	}
 
-	r.logger.Info("Installed remote snapshot")
+	r.logger.Info("已安装远程的日志")
 	resp.Success = true
 	r.setLastContact()
 	return
