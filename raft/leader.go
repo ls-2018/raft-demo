@@ -112,35 +112,27 @@ func (r *Raft) leaderLoop() {
 
 	for r.getState() == Leader {
 		select {
-		case rpc := <-r.rpcCh:
+		case rpc := <-r.rpcCh: // over
 			r.processRPC(rpc)
-
 		case <-r.leaderState.stepDown:
 			r.setState(Follower)
-
-		case future := <-r.leadershipTransferCh: // runLeader
+		case future := <-r.leadershipTransferCh: // runLeader 监听leader转移
 			if r.getLeadershipTransferInProgress() {
 				// 如果已经在转移中了
 				r.logger.Debug(ErrLeadershipTransferInProgress.Error())
 				future.respond(ErrLeadershipTransferInProgress)
 				continue
 			}
-
 			r.logger.Debug("leader开始转移到", "id", future.ID, "address", future.Address)
-
 			// 当离开 leaderLoop,不再是leader, 需要关闭leftLeaderLoop
 			leftLeaderLoop := make(chan struct{})
 			defer func() { close(leftLeaderLoop) }()
-
 			stopCh := make(chan struct{})
 			doneCh := make(chan error, 1)
 
-			// This is intentionally being setup outside of the
-			// leadershipTransfer function. Because the TimeoutNow
-			// call is blocking and there is no way to abort that
-			// in case eg the timer expires.
-			// The leadershipTransfer function is controlled with
-			// the stopCh and doneCh.
+			// 这是在领导权转移函数之外故意设置的。
+			// 因为TimeoutNow调用是阻塞的，而且没有办法在定时器过期的情况下中止它。
+			// leadershipTransfer函数是由stopCh和doneCh控制的。
 			go func() {
 				select {
 				case <-time.After(r.config().ElectionTimeout):
@@ -186,7 +178,6 @@ func (r *Raft) leaderLoop() {
 			}
 
 			go r.leadershipTransfer(*id, *address, state, stopCh, doneCh)
-
 		case <-r.leaderState.commitCh:
 			// Process the newly committed entries
 			oldCommitIndex := r.getCommitIndex()
@@ -240,14 +231,13 @@ func (r *Raft) leaderLoop() {
 					r.setState(Follower)
 				}
 			}
-
 		case v := <-r.verifyCh:
 			if v.quorumSize == 0 {
 				// 刚发送，开始核查
 				r.verifyLeader(v)
 
 			} else if v.votes < v.quorumSize {
-				// Early return, means there must be a new leader
+				// 提早回来，意味着必须有一个新的领袖
 				r.logger.Warn("new leader elected, stepping down")
 				r.setState(Follower)
 				delete(r.leaderState.notify, v)
@@ -264,7 +254,6 @@ func (r *Raft) leaderLoop() {
 				}
 				v.respond(nil)
 			}
-
 		case future := <-r.userRestoreCh:
 			if r.getLeadershipTransferInProgress() {
 				r.logger.Debug(ErrLeadershipTransferInProgress.Error())
@@ -273,7 +262,6 @@ func (r *Raft) leaderLoop() {
 			}
 			err := r.restoreUserSnapshot(future.meta, future.reader)
 			future.respond(err)
-
 		case future := <-r.configurationsCh:
 			if r.getLeadershipTransferInProgress() {
 				r.logger.Debug(ErrLeadershipTransferInProgress.Error())
@@ -282,7 +270,6 @@ func (r *Raft) leaderLoop() {
 			}
 			future.configurations = r.configurations.Clone()
 			future.respond(nil)
-
 		case future := <-r.configurationChangeChIfStable():
 			if r.getLeadershipTransferInProgress() {
 				r.logger.Debug(ErrLeadershipTransferInProgress.Error())
@@ -290,11 +277,9 @@ func (r *Raft) leaderLoop() {
 				continue
 			}
 			r.appendConfigurationEntry(future)
-
-		case b := <-r.bootstrapCh:
+		case b := <-r.bootstrapCh: // over 🈲
 			b.respond(ErrCantBootstrap)
-
-		case newLog := <-r.applyCh:
+		case newLog := <-r.applyCh: // over
 			if r.getLeadershipTransferInProgress() { // 判断是不是在转移leader
 				r.logger.Debug(ErrLeadershipTransferInProgress.Error())
 				newLog.respond(ErrLeadershipTransferInProgress)
@@ -302,13 +287,13 @@ func (r *Raft) leaderLoop() {
 			}
 			// 集体提交，收集所有准备好的提交
 			ready := []*logFuture{newLog}
-		GROUP_COMMIT_LOOP:
+		GroupCommitLoop:
 			for i := 0; i < r.config().MaxAppendEntries; i++ {
 				select {
 				case newLog := <-r.applyCh:
 					ready = append(ready, newLog)
 				default:
-					break GROUP_COMMIT_LOOP
+					break GroupCommitLoop
 				}
 			}
 
@@ -321,21 +306,18 @@ func (r *Raft) leaderLoop() {
 			} else {
 				r.dispatchLogs(ready)
 			}
+		case <-lease: // over
 
-		case <-lease:
-			// Check if we've exceeded the lease, potentially stepping down
+			// 看看我们是否超过了租约，可能会辞职
+			// 调整下一次检查各节点通信节点的时间
 			maxDiff := r.checkLeaderLease()
 
-			// Next check interval should adjust for the last node we've
-			// contacted, without going negative
+			// 下次检查的间隔应该调整为我们联系的最后一个节点，而不是负数
 			checkInterval := r.config().LeaderLeaseTimeout - maxDiff
 			if checkInterval < minCheckInterval {
 				checkInterval = minCheckInterval
 			}
-
-			// Renew the lease timer
 			lease = time.After(checkInterval)
-
 		case <-r.shutdownCh:
 			return
 		}
@@ -367,10 +349,9 @@ func (r *Raft) verifyLeader(v *verifyFuture) {
 	}
 }
 
-// leadershipTransfer is doing the heavy lifting for the leadership transfer.
 func (r *Raft) leadershipTransfer(id ServerID, address ServerAddress, repl *followerReplication, stopCh chan struct{}, doneCh chan error) {
 
-	// make sure we are not already stopped
+	// 确保我们没有被阻止
 	select {
 	case <-stopCh:
 		doneCh <- nil
@@ -419,54 +400,12 @@ func (r *Raft) setupLeaderState() {
 	r.leaderState.commitCh = make(chan struct{}, 1)
 	r.leaderState.commitment = newCommitment(r.leaderState.commitCh,
 		r.configurations.latest,
-		r.getLastIndex()+1 /* first index that may be committed in this term */)
+		r.getLastIndex()+1, // 这个任期内，最早提交的index
+	)
 	r.leaderState.inflight = list.New()
 	r.leaderState.replState = make(map[ServerID]*followerReplication)
 	r.leaderState.notify = make(map[*verifyFuture]struct{})
 	r.leaderState.stepDown = make(chan struct{}, 1)
-}
-
-// checkLeaderLease 检查是否仍与大多数通信在规定时间内;返回没有通信的最长时间。
-func (r *Raft) checkLeaderLease() time.Duration {
-	// 跟踪可以通信的节点，包括自己
-	contacted := 0
-
-	// 存储这个检查调用的租约超时，因为我们需要在循环中引用它，如果它变成可更改的，并在下面的循环之间更改，将会令人困惑。
-	leaseTimeout := r.config().LeaderLeaseTimeout // 500ms
-
-	// Check each follower
-	var maxDiff time.Duration
-	now := time.Now()
-	for _, server := range r.configurations.latest.Servers {
-		if server.Suffrage == Voter {
-			if server.ID == r.localID {
-				contacted++
-				continue
-			}
-			f := r.leaderState.replState[server.ID]
-			diff := now.Sub(f.LastContact())
-			if diff <= leaseTimeout {
-				contacted++
-				if diff > maxDiff {
-					maxDiff = diff
-				}
-			} else {
-				// Log at least once at high value, then debug. Otherwise it gets very verbose.
-				if diff <= 3*leaseTimeout {
-					r.logger.Warn("failed to contact", "server-id", server.ID, "time", diff)
-				} else {
-					r.logger.Debug("failed to contact", "server-id", server.ID, "time", diff)
-				}
-			}
-		}
-	}
-
-	quorum := r.quorumSize()
-	if contacted < quorum {
-		r.logger.Warn("无法与大多数节点通信，设置为Follower")
-		r.setState(Follower)
-	}
-	return maxDiff
 }
 
 // ------------------------------------ over ------------------------------------
@@ -513,4 +452,41 @@ func (r *Raft) setLeadershipTransferInProgress(v bool) {
 func (r *Raft) getLeadershipTransferInProgress() bool {
 	v := atomic.LoadInt32(&r.leaderState.leadershipTransferInProgress)
 	return v == 1
+}
+
+// checkLeaderLease 检查是否仍与大多数通信在规定时间内;返回没有通信的最长时间。
+func (r *Raft) checkLeaderLease() time.Duration {
+	// 跟踪可以通信的节点，包括自己
+	contacted := 0
+
+	// 存储这个检查调用的租约超时，因为我们需要在循环中引用它，如果它变成可更改的，并在下面的循环之间更改，将会令人困惑。
+	leaseTimeout := r.config().LeaderLeaseTimeout // 500ms
+
+	var maxDiff time.Duration // 通信间隔最大的时间
+	now := time.Now()
+	for _, server := range r.configurations.latest.Servers {
+		if server.Suffrage == Voter {
+			if server.ID == r.localID {
+				contacted++
+				continue
+			}
+			f := r.leaderState.replState[server.ID]
+			diff := now.Sub(f.LastContact())
+			if diff <= leaseTimeout {
+				contacted++
+				if diff > maxDiff {
+					maxDiff = diff
+				}
+			} else {
+				r.logger.Warn("failed to contact", "server-id", server.ID, "time", diff)
+			}
+		}
+	}
+
+	quorum := r.quorumSize()
+	if contacted < quorum {
+		r.logger.Warn("无法与大多数节点通信，设置为Follower")
+		r.setState(Follower)
+	}
+	return maxDiff
 }

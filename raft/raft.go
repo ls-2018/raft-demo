@@ -123,15 +123,14 @@ func (r *Raft) run() {
 
 // todo 尝试发送一个初始的集群的初始配置；   只有在跟随者状态下才有意义。
 func (r *Raft) liveBootstrap(configuration Configuration) error {
-	// Use the pre-init API to make the static updates.
+	// 使用初始化前API进行静态更新。
 	cfg := r.config()
-	err := BootstrapCluster(&cfg, r.logs, r.stable, r.snapshots,
-		r.trans, configuration)
+	err := BootstrapCluster(&cfg, r.logs, r.stable, r.snapshots, r.trans, configuration)
 	if err != nil {
 		return err
 	}
 
-	// Make the configuration live.
+	// 启用配置。
 	var entry Log
 	if err := r.logs.GetLog(1, &entry); err != nil {
 		panic(err)
@@ -232,33 +231,21 @@ func (r *Raft) quorumSize() int {
 	return voters/2 + 1
 }
 
-// restoreUserSnapshot is used to manually consume an external snapshot, such
-// as if restoring from a backup. We will use the current Raft configuration,
-// not the one from the snapshot, so that we can restore into a new cluster. We
-// will also use the higher of the index of the snapshot, or the current index,
-// and then add 1 to that, so we force a new state with a hole in the Raft log,
-// so that the snapshot will be sent to followers and used for any new joiners.
-// This can only be run on the leader, and returns a future that can be used to
-// block until complete.
+// restoreUserSnapshot 重新存储一个快照，并将数据存储到FSM
 func (r *Raft) restoreUserSnapshot(meta *SnapshotMeta, reader io.Reader) error {
-
-	// Sanity check the version.
 	version := meta.Version
 	if version < SnapshotVersionMin || version > SnapshotVersionMax {
-		return fmt.Errorf("unsupported snapshot version %d", version)
+		return fmt.Errorf("快照版本不支持 %d", version)
 	}
 
-	// We don't support snapshots while there's a config change
-	// outstanding since the snapshot doesn't have a means to
-	// represent this state.
+	// 当配置更改未完成时，我们不支持快照，因为快照没有表示这种状态的方法。
 	committedIndex := r.configurations.committedIndex
 	latestIndex := r.configurations.latestIndex
 	if committedIndex != latestIndex {
-		return fmt.Errorf("cannot restore snapshot now, wait until the configuration entry at %v has been applied (have applied %v)",
-			latestIndex, committedIndex)
+		return fmt.Errorf("无法恢复快照, 等待配置项更新 【latestIndex:%v】[committedIndex:%v]", latestIndex, committedIndex)
 	}
 
-	// Cancel any inflight requests.
+	// 取消所有未提交的请求
 	for {
 		e := r.leaderState.inflight.Front()
 		if e == nil {
@@ -267,42 +254,32 @@ func (r *Raft) restoreUserSnapshot(meta *SnapshotMeta, reader io.Reader) error {
 		e.Value.(*logFuture).respond(ErrAbortedByRestore)
 		r.leaderState.inflight.Remove(e)
 	}
-
-	// We will overwrite the snapshot metadata with the current term,
-	// an index that's greater than the current index, or the last
-	// index in the snapshot. It's important that we leave a hole in
-	// the index so we know there's nothing in the Raft log there and
-	// replication will fault and send the snapshot.
 	term := r.getCurrentTerm()
 	lastIndex := r.getLastIndex()
 	if meta.Index > lastIndex {
 		lastIndex = meta.Index
 	}
 	lastIndex++
-
-	// Dump the snapshot. Note that we use the latest configuration,
-	// not the one that came with the snapshot.
-	sink, err := r.snapshots.Create(version, lastIndex, term,
-		r.configurations.latest, r.configurations.latestIndex, r.trans)
+	sink, err := r.snapshots.Create(version, lastIndex, term, r.configurations.latest, r.configurations.latestIndex, r.trans)
 	if err != nil {
-		return fmt.Errorf("failed to create snapshot: %v", err)
+		return fmt.Errorf("创建快照失败: %v", err)
 	}
 	n, err := io.Copy(sink, reader)
 	if err != nil {
 		sink.Cancel()
-		return fmt.Errorf("failed to write snapshot: %v", err)
+		return fmt.Errorf("写快照失败: %v", err)
 	}
 	if n != meta.Size {
 		sink.Cancel()
-		return fmt.Errorf("failed to write snapshot, size didn't match (%d != %d)", n, meta.Size)
+		return fmt.Errorf("写快照失败, size didn't match (%d != %d)", n, meta.Size)
 	}
 	if err := sink.Close(); err != nil {
-		return fmt.Errorf("failed to close snapshot: %v", err)
+		return fmt.Errorf("关闭快照失败: %v", err)
 	}
-	r.logger.Info("copied to local snapshot", "bytes", n)
+	r.logger.Info("拷贝数据到本地快照", "bytes", n)
 
-	// Restore the snapshot into the FSM. If this fails we are in a
-	// bad state so we panic to take ourselves out.
+	// 恢复快照到FSM如果失败了，我们就会处于一个糟糕的状态，所以我们会恐慌地把自己干掉。
+	// 将数据保存到了快照，然后更新到用户的FSM
 	fsm := &restoreFuture{ID: sink.ID()}
 	fsm.ShutdownCh = r.shutdownCh
 	fsm.init()
@@ -312,20 +289,37 @@ func (r *Raft) restoreUserSnapshot(meta *SnapshotMeta, reader io.Reader) error {
 		return ErrRaftShutdown
 	}
 	if err := fsm.Error(); err != nil {
-		panic(fmt.Errorf("failed to restore snapshot: %v", err))
+		panic(fmt.Errorf("重新存储用户快照失败: %v", err))
 	}
-
-	// We set the last log so it looks like we've stored the empty
-	// index we burned. The last applied is set because we made the
-	// FSM take the snapshot state, and we store the last snapshot
-	// in the stable store since we created a snapshot as part of
-	// this process.
 	r.setLastLog(lastIndex, term)
 	r.setLastApplied(lastIndex)
 	r.setLastSnapshot(lastIndex, term)
 
-	r.logger.Info("restored user snapshot", "index", latestIndex)
+	r.logger.Info("重新存储 snapshot", "index", latestIndex)
 	return nil
+}
+
+// pickServer returns the follower that is most up to date and participating in quorum.
+// Because it accesses leaderstate, it should only be called from the leaderloop.
+func (r *Raft) pickServer() *Server {
+	var pick *Server
+	var current uint64
+	for _, server := range r.configurations.latest.Servers {
+		if server.ID == r.localID || server.Suffrage != Voter {
+			continue
+		}
+		state, ok := r.leaderState.replState[server.ID]
+		if !ok {
+			continue
+		}
+		nextIdx := atomic.LoadUint64(&state.nextIndex)
+		if nextIdx > current {
+			current = nextIdx
+			tmp := server
+			pick = &tmp
+		}
+	}
+	return pick
 }
 
 // appendConfigurationEntry changes the configuration and adds a new
@@ -413,16 +407,6 @@ func (r *Raft) dispatchLogs(applyLogs []*logFuture) {
 	}
 }
 
-// processLogs is used to apply all the committed entries that haven't been
-// applied up to the given index limit.
-// This can be called from both leaders and followers.
-// Followers call this from AppendEntries, for n entries at a time, and always
-// pass futures=nil.
-// Leaders call this when entries are committed. They pass the futures from any
-// inflight logs.
-//是用来应用所有尚未应用到给定索引限制的已承诺条目。领导者和追随者都可以调用这个功能。
-//跟随者从AppendEntries中调用这个，每次调用n个条目，并且总是传递futures=nil。
-//领导者在条目被提交时调用此功能。他们从任何飞行日志中传递期货。
 func (r *Raft) processLogs(index uint64, futures map[uint64]*logFuture) {
 	// 拒绝我们已经申请的日志
 	lastApplied := r.getLastApplied()
@@ -557,30 +541,7 @@ func (r *Raft) setState(state RaftState) {
 	r.raftState.setState(state)
 }
 
-// pickServer returns the follower that is most up to date and participating in quorum.
-// Because it accesses leaderstate, it should only be called from the leaderloop.
-func (r *Raft) pickServer() *Server {
-	var pick *Server
-	var current uint64
-	for _, server := range r.configurations.latest.Servers {
-		if server.ID == r.localID || server.Suffrage != Voter {
-			continue
-		}
-		state, ok := r.leaderState.replState[server.ID]
-		if !ok {
-			continue
-		}
-		nextIdx := atomic.LoadUint64(&state.nextIndex)
-		if nextIdx > current {
-			current = nextIdx
-			tmp := server
-			pick = &tmp
-		}
-	}
-	return pick
-}
-
-// timeoutNow is what happens when a server receives a TimeoutNowRequest.
+// timeoutNow 当leader收到一个超时信号
 func (r *Raft) timeoutNow(rpc RPC, req *TimeoutNowRequest) {
 	r.setLeader("")
 	r.setState(Candidate)

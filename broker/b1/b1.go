@@ -92,7 +92,7 @@ func main() {
 		}
 		future := httpServer.ctx.Snapshot()
 		if err := future.Error(); err == nil {
-			fmt.Println("-------->", future)
+			fmt.Println("SnapshotFuture -------->", future)
 		}
 	}()
 	http.ListenAndServe(httpAddr, nil)

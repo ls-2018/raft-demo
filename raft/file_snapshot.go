@@ -163,7 +163,7 @@ func (f *FileSnapshotStore) testPermissions() error {
 	return nil
 }
 
-// snapshotName generates a name for the snapshot.
+// snapshotName 生成快照的名称
 func snapshotName(term, index uint64) string {
 	now := time.Now()
 	msec := now.UnixNano() / int64(time.Millisecond)
@@ -174,21 +174,19 @@ func snapshotName(term, index uint64) string {
 func (f *FileSnapshotStore) Create(version SnapshotVersion, index, term uint64,
 	configuration Configuration, configurationIndex uint64, trans Transport) (SnapshotSink, error) {
 	if version != 1 {
-		return nil, fmt.Errorf("unsupported snapshot version %d", version)
+		return nil, fmt.Errorf("不支持的快照版本 %d", version)
 	}
 
-	// Create a new path
 	name := snapshotName(term, index)
 	path := filepath.Join(f.path, name+tmpSuffix)
 	f.logger.Info("创建新快照", "path", path)
 
 	// Make the directory
 	if err := os.MkdirAll(path, 0755); err != nil {
-		f.logger.Error("failed to make snapshot directly", "error", err)
+		f.logger.Error("创建快照目录失败", "error", err)
 		return nil, err
 	}
 
-	// Create the sink
 	sink := &FileSnapshotSink{
 		store:     f,
 		logger:    f.logger,
@@ -209,29 +207,23 @@ func (f *FileSnapshotStore) Create(version SnapshotVersion, index, term uint64,
 		},
 	}
 
-	// Write out the meta data
 	if err := sink.writeMeta(); err != nil {
-		f.logger.Error("failed to write metadata", "error", err)
+		f.logger.Error("写元信息文件失败", "error", err)
 		return nil, err
 	}
 
-	// Open the state file
 	statePath := filepath.Join(path, stateFilePath)
 	fh, err := os.Create(statePath)
 	if err != nil {
-		f.logger.Error("failed to create state file", "error", err)
+		f.logger.Error("创建state文件失败", "error", err)
 		return nil, err
 	}
 	sink.stateFile = fh
-
-	// Create a CRC64 hash
 	sink.stateHash = crc64.New(crc64.MakeTable(crc64.ECMA))
-
-	// Wrap both the hash and file in a MultiWriter with buffering
+	// 将哈希值和文件都包装到具有缓冲的MultiWriter中
 	multi := io.MultiWriter(sink.stateFile, sink.stateHash)
 	sink.buffered = bufio.NewWriter(multi)
 
-	// Done
 	return sink, nil
 }
 

@@ -29,7 +29,8 @@ func (r *Raft) runFollower() {
 			// 配置获取请求，读取当前配置、然后设置
 			c.configurations = r.configurations.Clone()
 			c.respond(nil)
-		case b := <-r.bootstrapCh:
+		case b := <-r.bootstrapCh: // over ✅
+			_ = r.BootstrapCluster // 由它触发
 			b.respond(r.liveBootstrap(b.configuration))
 
 		case <-heartbeatTimer: // over
@@ -49,7 +50,7 @@ func (r *Raft) runFollower() {
 			lastLeader := r.Leader()
 			r.setLeader("")
 
-			if r.configurations.latestIndex == 0 {
+			if r.configurations.latestIndex == 0 { // 默认0 ,引导以后会变成1
 				if !didWarn {
 					r.logger.Warn("没有已知的peers，中止选举")
 					didWarn = true

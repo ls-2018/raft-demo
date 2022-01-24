@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"io"
+	"log"
 	"raft-demo/raft"
 	"strings"
 	"sync"
@@ -80,6 +81,7 @@ func (d *database) Persist(sink raft.SnapshotSink) error {
 		temp := [2]string{k, v}
 		data, err := json.Marshal(temp)
 		if err != nil {
+			log.Fatalln(err)
 			return err
 		}
 		if start {

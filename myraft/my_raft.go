@@ -54,6 +54,7 @@ func NewMyRaft(raftAddr, raftId, raftDir string) (*raft.Raft, *fsm.Fsm, error) {
 	return rf, fm, nil
 }
 
+// Bootstrap 集群节点信息引导
 func Bootstrap(rf *raft.Raft, raftId, raftAddr, raftCluster string) {
 	servers := rf.GetConfiguration().Configuration().Servers
 	if len(servers) > 0 {

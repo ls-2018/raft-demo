@@ -153,36 +153,28 @@ type Raft struct {
 	configurationsCh chan *configurationsFuture
 
 	// bootstrapCh 是用来尝试从主线程之外进行初始引导
-	bootstrapCh chan *bootstrapFuture
+	bootstrapCh chan *bootstrapFuture // 只能在follower的时候运行
 
 	// leadershipTransferCh 是用来从主线程之外启动leader转移监听的。
 	leadershipTransferCh chan *leadershipTransferFuture
 }
 
-// BootstrapCluster initializes a server's storage with the given cluster
-// configuration. This should only be called at the beginning of time for the
-// cluster with an identical configuration listing all Voter servers. There is
-// no need to bootstrap Nonvoter and Staging servers.
-//
-// A cluster can only be bootstrapped once from a single participating Voter
-// server. Any further attempts to bootstrap will return an error that can be
-// safely ignored.
-//
-// One approach is to bootstrap a single server with a configuration
-// listing just itself as a Voter, then invoke AddVoter() on it to add other
-// servers to the cluster.
+// BootstrapCluster
+// 通过提供的集群配置初始化服务器存储,对于列出所有Voter服务器的相同配置的集群，应该只在一开始调用它。不需要引导Nonvoter、Staging 服务器。
+// 集群只能从一个参与的投票者服务器启动一次。在leader启动
+// 任何进一步的引导尝试都将返回一个可以安全地忽略的错误。
+// 一种方法是将configuration作为一个Voter引导单个服务器，然后调用它的AddVoter()将其他服务器添加到集群中。
 func BootstrapCluster(conf *Config, logs LogStore, stable StableStore, snaps SnapshotStore, trans Transport, configuration Configuration) error {
-	// Validate the Raft server config.
 	if err := ValidateConfig(conf); err != nil {
 		return err
 	}
 
-	// Sanity check the Raft peer configuration.
+	// 完整性检查Raft node 配置。
 	if err := checkConfiguration(configuration); err != nil {
 		return err
 	}
 
-	// Make sure the cluster is in a clean state.
+	// 确保集群有一个干净的状态
 	hasState, err := HasExistingState(logs, stable, snaps)
 	if err != nil {
 		return fmt.Errorf("failed to check for existing state: %v", err)
@@ -215,170 +207,9 @@ func BootstrapCluster(conf *Config, logs LogStore, stable StableStore, snaps Sna
 	return nil
 }
 
-// RecoverCluster is used to manually force a new configuration in order to
-// recover from a loss of quorum where the current configuration cannot be
-// restored, such as when several servers die at the same time. This works by
-// reading all the current state for this server, creating a snapshot with the
-// supplied configuration, and then truncating the Raft log. This is the only
-// safe way to force a given configuration without actually altering the log to
-// insert any new entries, which could cause conflicts with other servers with
-// different state.
-//
-// WARNING! This operation implicitly commits all entries in the Raft log, so
-// in general this is an extremely unsafe operation. If you've lost your other
-// servers and are performing a manual recovery, then you've also lost the
-// commit information, so this is likely the best you can do, but you should be
-// aware that calling this can cause Raft log entries that were in the process
-// of being replicated but not yet be committed to be committed.
-//
-// Note the FSM passed here is used for the snapshot operations and will be
-// left in a state that should not be used by the application. Be sure to
-// discard this FSM and any associated state and provide a fresh one when
-// calling NewRaft later.
-//
-// A typical way to recover the cluster is to shut down all servers and then
-// run RecoverCluster on every server using an identical configuration. When
-// the cluster is then restarted, and election should occur and then Raft will
-// resume normal operation. If it's desired to make a particular server the
-// leader, this can be used to inject a new configuration with that server as
-// the sole voter, and then join up other new clean-state peer servers using
-// the usual APIs in order to bring the cluster back into a known state.
-func RecoverCluster(conf *Config, fsm FSM, logs LogStore, stable StableStore,
-	snaps SnapshotStore, trans Transport, configuration Configuration) error {
-	// Validate the Raft server config.
-	if err := ValidateConfig(conf); err != nil {
-		return err
-	}
-
-	// Sanity check the Raft peer configuration.
-	if err := checkConfiguration(configuration); err != nil {
-		return err
-	}
-
-	// Refuse to recover if there's no existing state. This would be safe to
-	// do, but it is likely an indication of an operator error where they
-	// expect data to be there and it's not. By refusing, we force them
-	// to show intent to start a cluster fresh by explicitly doing a
-	// bootstrap, rather than quietly fire up a fresh cluster here.
-	if hasState, err := HasExistingState(logs, stable, snaps); err != nil {
-		return fmt.Errorf("failed to check for existing state: %v", err)
-	} else if !hasState {
-		return fmt.Errorf("refused to recover cluster with no initial state, this is probably an operator error")
-	}
-
-	// Attempt to restore any snapshots we find, newest to oldest.
-	var (
-		snapshotIndex  uint64
-		snapshotTerm   uint64
-		snapshots, err = snaps.List()
-	)
-	if err != nil {
-		return fmt.Errorf("failed to list snapshots: %v", err)
-	}
-	for _, snapshot := range snapshots {
-		var source io.ReadCloser
-		_, source, err = snaps.Open(snapshot.ID)
-		if err != nil {
-			// Skip this one and try the next. We will detect if we
-			// couldn't open any snapshots.
-			continue
-		}
-
-		// Note this is the one place we call fsm.Restore without the
-		// fsmRestoreAndMeasure wrapper since this function should only be called to
-		// reset state on disk and the FSM passed will not be used for a running
-		// server instance. If the same process will eventually become a Raft peer
-		// then it will call NewRaft and restore again from disk then which will
-		// report metrics.
-		err = fsm.Restore(source)
-		// Close the source after the restore has completed
-		source.Close()
-		if err != nil {
-			// Same here, skip and try the next one.
-			continue
-		}
-
-		snapshotIndex = snapshot.Index
-		snapshotTerm = snapshot.Term
-		break
-	}
-	if len(snapshots) > 0 && (snapshotIndex == 0 || snapshotTerm == 0) {
-		return fmt.Errorf("failed to restore any of the available snapshots")
-	}
-
-	// The snapshot information is the best known end point for the data
-	// until we play back the Raft log entries.
-	lastIndex := snapshotIndex
-	lastTerm := snapshotTerm
-
-	// Apply any Raft log entries past the snapshot.
-	lastLogIndex, err := logs.LastIndex()
-	if err != nil {
-		return fmt.Errorf("failed to find last log: %v", err)
-	}
-	for index := snapshotIndex + 1; index <= lastLogIndex; index++ {
-		var entry Log
-		if err = logs.GetLog(index, &entry); err != nil {
-			return fmt.Errorf("failed to get log at index %d: %v", index, err)
-		}
-		if entry.Type == LogCommand {
-			_ = fsm.Apply(&entry)
-		}
-		lastIndex = entry.Index
-		lastTerm = entry.Term
-	}
-
-	// Create a new snapshot, placing the configuration in as if it was
-	// committed at index 1.
-	snapshot, err := fsm.Snapshot()
-	if err != nil {
-		return fmt.Errorf("failed to snapshot FSM: %v", err)
-	}
-	version := getSnapshotVersion(conf.ProtocolVersion)
-	sink, err := snaps.Create(version, lastIndex, lastTerm, configuration, 1, trans)
-	if err != nil {
-		return fmt.Errorf("failed to create snapshot: %v", err)
-	}
-	if err = snapshot.Persist(sink); err != nil {
-		return fmt.Errorf("failed to persist snapshot: %v", err)
-	}
-	if err = sink.Close(); err != nil {
-		return fmt.Errorf("failed to finalize snapshot: %v", err)
-	}
-
-	// Compact the log so that we don't get bad interference from any
-	// configuration change log entries that might be there.
-	firstLogIndex, err := logs.FirstIndex()
-	if err != nil {
-		return fmt.Errorf("failed to get first log index: %v", err)
-	}
-	if err := logs.DeleteRange(firstLogIndex, lastLogIndex); err != nil {
-		return fmt.Errorf("log compaction failed: %v", err)
-	}
-
-	return nil
-}
-
-// GetConfiguration returns the persisted configuration of the Raft cluster
-// without starting a Raft instance or connecting to the cluster. This function
-// has identical behavior to Raft.GetConfiguration.
-func GetConfiguration(conf *Config, fsm FSM, logs LogStore, stable StableStore, snaps SnapshotStore, trans Transport) (Configuration, error) {
-	conf.skipStartup = true
-	r, err := NewRaft(conf, fsm, logs, stable, snaps, trans)
-	if err != nil {
-		return Configuration{}, err
-	}
-	future := r.GetConfiguration()
-	if err = future.Error(); err != nil {
-		return Configuration{}, err
-	}
-	return future.Configuration(), nil
-}
-
-// HasExistingState returns true if the server has any existing state (logs,
-// knowledge of a current term, or any snapshots).
+// HasExistingState 如果服务器有任何现有状态，则返回true  (logs,knowledge of a current term, or any snapshots).
 func HasExistingState(logs LogStore, stable StableStore, snaps SnapshotStore) (bool, error) {
-	// Make sure we don't have a current term.
+	// 确保当前没有任期
 	currentTerm, err := stable.GetUint64(keyCurrentTerm)
 	if err == nil {
 		if currentTerm > 0 {
@@ -390,7 +221,7 @@ func HasExistingState(logs LogStore, stable StableStore, snaps SnapshotStore) (b
 		}
 	}
 
-	// Make sure we have an empty log.
+	// 确保有一个空日志
 	lastIndex, err := logs.LastIndex()
 	if err != nil {
 		return false, fmt.Errorf("failed to get last log index: %v", err)
@@ -615,19 +446,10 @@ func (r *Raft) ReloadableConfig() ReloadableConfig {
 	return rc
 }
 
-// BootstrapCluster is equivalent to non-member BootstrapCluster but can be
-// called on an un-bootstrapped Raft instance after it has been created. This
-// should only be called at the beginning of time for the cluster with an
-// identical configuration listing all Voter servers. There is no need to
-// bootstrap Nonvoter and Staging servers.
-//
-// A cluster can only be bootstrapped once from a single participating Voter
-// server. Any further attempts to bootstrap will return an error that can be
-// safely ignored.
-//
-// One sane approach is to bootstrap a single server with a configuration
-// listing just itself as a Voter, then invoke AddVoter() on it to add other
-// servers to the cluster.
+// BootstrapCluster 等价于非成员BootstrapCluster，但是可以在一个非bootstrap的Raft实例创建后被调用。
+// 对于列出所有Voter服务器的相同配置的集群，应该只在一开始调用它。不需要引导Nonvoter和Staging服务器。
+// 集群只能从一个参与的投票者服务器启动一次。任何进一步的引导尝试都将返回一个可以安全地忽略的错误。
+// 一种明智的方法是使用一个配置清单引导单个服务器，将其本身作为一个投票者，然后在其上调用AddVoter()将其他服务器添加到集群中。
 func (r *Raft) BootstrapCluster(configuration Configuration) Future {
 	bootstrapReq := &bootstrapFuture{}
 	bootstrapReq.init()

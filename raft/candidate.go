@@ -21,10 +21,10 @@ func (r *Raft) runCandidate() {
 
 	for r.getState() == Candidate {
 		select {
-		case rpc := <-r.rpcCh:
+		case rpc := <-r.rpcCh: // runCandidate
 			r.processRPC(rpc)
 
-		case vote := <-voteCh:
+		case vote := <-voteCh: // runCandidate
 			// 检查目标主机是否大于当前任期
 			if vote.Term > r.getCurrentTerm() {
 				r.logger.Debug("发现新的任期、退化为follower")
@@ -48,25 +48,27 @@ func (r *Raft) runCandidate() {
 			}
 		//-----------------------------------
 		// 拒绝任何操作，当不是leader
-		case c := <-r.configurationChangeCh: // runCandidate
+		case c := <-r.configurationChangeCh: // runCandidate🈲
 			c.respond(ErrNotLeader)
-		case a := <-r.applyCh: // runCandidate
+		case a := <-r.applyCh: // runCandidate🈲
 			a.respond(ErrNotLeader)
-		case v := <-r.verifyCh: // runCandidate
+		case v := <-r.verifyCh: // runCandidate🈲
 			v.respond(ErrNotLeader)
-		case r := <-r.userRestoreCh: // runCandidate
+		case r := <-r.userRestoreCh: // runCandidate 🈲
 			r.respond(ErrNotLeader)
-		case r := <-r.leadershipTransferCh: // runCandidate
+		case r := <-r.leadershipTransferCh: // runCandidate🈲
 			r.respond(ErrNotLeader)
 		//-----------------------------------
-		case c := <-r.configurationsCh:
+		// 拒绝任何操作，当不是follower
+		case b := <-r.bootstrapCh: // runCandidate 🈲
+			b.respond(ErrCantBootstrap)
+
+		case c := <-r.configurationsCh: // runCandidate
 			c.configurations = r.configurations.Clone()
 			c.respond(nil)
 
-		case b := <-r.bootstrapCh:
-			b.respond(ErrCantBootstrap)
 
-		case <-electionTimer:
+		case <-electionTimer: // runCandidate
 			r.logger.Warn("选举已超时，重新开始选举")
 			return
 
