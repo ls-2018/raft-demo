@@ -175,7 +175,6 @@ func (r *Raft) startStopReplication() {
 			r.goFunc(func() { r.replicate(s) })
 			_ = r.electSelf // 触发一下,第一次也没数据
 			asyncNotifyCh(s.triggerCh)
-			r.observe(PeerObservation{Peer: server, Removed: false})
 		} else if ok {
 			// 在变成非leader 以及 重新变成leader后，走这里
 			s.peerLock.RLock()
@@ -201,7 +200,6 @@ func (r *Raft) startStopReplication() {
 		repl.stopCh <- lastIdx
 		close(repl.stopCh)
 		delete(r.leaderState.replState, serverID)
-		r.observe(PeerObservation{Peer: repl.peer, Removed: true})
 	}
 
 }
@@ -557,11 +555,7 @@ func (r *Raft) setCurrentTerm(t uint64) {
 // setState 是用来更新当前状态。任何状态转换都会导致已知的领导者被清空。这意味着只有在更新状态后才应设置领导者。
 func (r *Raft) setState(state RaftState) {
 	r.setLeader("")
-	oldState := r.raftState.getState()
 	r.raftState.setState(state)
-	if oldState != state {
-		r.observe(state)
-	}
 }
 
 // pickServer returns the follower that is most up to date and participating in quorum.

@@ -352,7 +352,6 @@ func (r *Raft) heartbeat(s *followerReplication, stopCh chan struct{}) {
 		// 发送追加日志请求
 		if err := r.trans.AppendEntries(peer.ID, peer.Address, &req, &resp); err != nil {
 			r.logger.Error("心跳失败", "peer", peer.Address, "error", err)
-			r.observe(FailedHeartbeatObservation{PeerID: peer.ID, LastContact: s.LastContact()})
 			failures++
 			select {
 			case <-time.After(backoff(failureWait, failures, maxFailureScale)):
@@ -360,9 +359,6 @@ func (r *Raft) heartbeat(s *followerReplication, stopCh chan struct{}) {
 			}
 		} else {
 			r.Ph(&req, &resp) // 打印信息
-			if failures > 0 {
-				r.observe(ResumedHeartbeatObservation{PeerID: peer.ID})
-			}
 			s.setLastContact()
 			failures = 0
 			// 重复的信息。保留是为了向后兼容。

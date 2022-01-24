@@ -21,13 +21,14 @@ type commitment struct {
 	// 这个leader任期的第一个索引：在这个leader可以标记任何已承诺的事情之前，这需要复制到集群的大多数。(根据Raft的承诺规则)
 	startIndex uint64
 }
-
 // newCommitment returns a commitment struct that notifies the provided
 // channel when log entries have been committed. A new commitment struct is
 // created each time this server becomes leader for a particular term.
 // 'configuration' is the servers in the cluster.
 // 'startIndex' is the first index created in this term (see
 // its description above).
+// 返回一个newCommitment结构体，当日志条目被提交时通知所提供的通道。每次这个服务器成为某个特定术语的领导者时，就会创建一个新的承诺结构。
+// '配置'是集群中的服务器。'startIndex'是这个术语中创建的第一个索引（见上面的描述）。
 func newCommitment(commitCh chan struct{}, configuration Configuration, startIndex uint64) *commitment {
 	matchIndexes := make(map[ServerID]uint64)
 	for _, server := range configuration.Servers {

@@ -211,7 +211,6 @@ func (r *Raft) processConfigurationLogEntry(entry *Log) error {
 
 // requestVote 当接收到远程的rpc 投票请求 会调用此函数
 func (r *Raft) requestVote(rpc RPC, req *RequestVoteRequest) {
-	r.observe(*req)
 
 	// 构建响应
 	resp := &RequestVoteResponse{

@@ -515,11 +515,6 @@ func (r *Raft) getLeadershipTransferInProgress() bool {
 // setLeader 是用来修改集群的当前领导者的
 func (r *Raft) setLeader(leader ServerAddress) {
 	r.leaderLock.Lock()
-	oldLeader := r.leader
 	r.leader = leader
 	r.leaderLock.Unlock()
-	if oldLeader != leader {
-		// 之前有，现在没有;之前没有现在没有;之前没有 现在有,但是不一样
-		r.observe(LeaderObservation{Leader: leader})
-	}
 }
