@@ -45,12 +45,12 @@ func ReadPeersJSON(path string) (Configuration, error) {
 	return configuration, nil
 }
 
-// configEntry is used when decoding a new-style peers.json.
+// configEntry 是在解码peers.json时使用的。
 type configEntry struct {
-	// ID is the ID of the server (a UUID, usually).
+	// ID 节点的逻辑ID
 	ID ServerID `json:"id"`
 
-	// Address is the host:port of the server.
+	// Address  host:port
 	Address ServerAddress `json:"address"`
 
 	// NonVoter controls the suffrage. We choose this sense so people

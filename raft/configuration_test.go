@@ -5,8 +5,6 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-
-	"github.com/stretchr/testify/require"
 )
 
 var sampleConfiguration = Configuration{
@@ -285,29 +283,6 @@ func TestConfiguration_nextConfiguration_checkConfiguration(t *testing.T) {
 	}
 }
 
-func TestConfiguration_encodeDecodePeers(t *testing.T) {
-	// Set up configuration.
-	var configuration Configuration
-	for i := 0; i < 3; i++ {
-		address := NewInmemAddr()
-		configuration.Servers = append(configuration.Servers, Server{
-			Suffrage: Voter,
-			ID:       ServerID(address),
-			Address:  ServerAddress(address),
-		})
-	}
-
-	// Encode into the old format.
-	_, trans := NewInmemTransport("")
-	buf := encodePeers(configuration, trans)
-
-	// Decode from old format, as if reading an old log entry.
-	decoded, err := decodePeers(buf, trans)
-	require.NoError(t, err)
-	if !reflect.DeepEqual(configuration, decoded) {
-		t.Fatalf("mismatch %v %v", configuration, decoded)
-	}
-}
 
 func TestConfiguration_encodeDecodeConfiguration(t *testing.T) {
 	decoded := DecodeConfiguration(EncodeConfiguration(sampleConfiguration))

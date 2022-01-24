@@ -50,10 +50,8 @@ type Server struct {
 	Address ServerAddress
 }
 
-// Configuration tracks which servers are in the cluster, and whether they have
-// votes. This should include the local server, if it's a member of the cluster.
-// The servers are listed no particular order, but each should only appear once.
-// These entries are appended to the log during membership changes.
+// Configuration 追踪集群中的哪些服务器，以及它们是否有投票权。这应该包括本地服务器，如果它是集群的成员。
+// 这些服务器没有特定的顺序，但每个服务器应该只出现一次。这些条目在成员变化时被追加到日志中。
 type Configuration struct {
 	Servers []Server
 }
