@@ -313,6 +313,7 @@ func (r *Raft) requestVote(rpc RPC, req *RequestVoteRequest) {
 
 // installSnapshot Follower状态下，日志落后leader太多
 func (r *Raft) installSnapshot(rpc RPC, req *InstallSnapshotRequest) {
+	_ = NetworkTransport{}.InstallSnapshot
 	resp := &InstallSnapshotResponse{
 		Term:    r.getCurrentTerm(),
 		Success: false,

@@ -114,29 +114,22 @@ func (r *Raft) sendLatestSnapshot(s *followerReplication) (bool, error) {
 		return false, err
 	}
 
-	// Check for a newer term, stop running
+	// 检查follower任期
 	if resp.Term > req.Term {
 		r.handleStaleTerm(s)
 		return true, nil
 	}
 
-	// Update the last contact
 	s.setLastContact()
 
-	// Check for success
 	if resp.Success {
-		// Update the indexes
-		atomic.StoreUint64(&s.nextIndex, meta.Index+1)
+		atomic.StoreUint64(&s.nextIndex, meta.Index+1) // 设置follower下一次发送日志的索引
 		s.commitment.match(peer.ID, meta.Index)
-
-		// Clear any failures
 		s.failures = 0
-
-		// Notify we are still leader
 		s.notifyAll(true)
 	} else {
 		s.failures++
-		r.logger.Warn("installSnapshot rejected to", "peer", peer)
+		r.logger.Warn("拒绝installSnapshot ", "peer", peer)
 	}
 	return false, nil
 }

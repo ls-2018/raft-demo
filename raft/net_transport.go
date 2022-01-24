@@ -424,7 +424,7 @@ func (n *NetworkTransport) InstallSnapshot(id ServerID, target ServerAddress, ar
 		return err
 	}
 
-	// Decode the response, do not return conn
+	// 解码响应
 	_, err = decodeResponse(conn, resp)
 	return err
 }
@@ -615,17 +615,16 @@ RESP:
 	return nil
 }
 
-// decodeResponse is used to decode an RPC response and reports whether
-// the connection can be reused.
+// decodeResponse 用于解码RPC响应，并报告连接是否可以重用。
 func decodeResponse(conn *netConn, resp interface{}) (bool, error) {
-	// Decode the error if any
+	// 解码错误(如果有的话)
 	var rpcError string
 	if err := conn.dec.Decode(&rpcError); err != nil {
 		conn.Release()
 		return false, err
 	}
 
-	// Decode the response
+	// 解码响应
 	if err := conn.dec.Decode(resp); err != nil {
 		conn.Release()
 		return false, err
