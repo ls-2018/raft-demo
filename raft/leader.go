@@ -267,7 +267,7 @@ func (r *Raft) leaderLoop() {
 			}
 			future.configurations = r.configurations.Clone()
 			future.respond(nil)
-		case future := <-r.configurationChangeChIfStable(): // 节点配置变更通道
+		case future := <-r.configurationChangeChIfStable(): // 节点配置变更通道 ✅
 			if r.getLeadershipTransferInProgress() {
 				r.logger.Debug(ErrLeadershipTransferInProgress.Error())
 				future.respond(ErrLeadershipTransferInProgress)
