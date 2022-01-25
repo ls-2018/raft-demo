@@ -274,7 +274,7 @@ func (s *followerReplication) notifyAll(leader bool) {
 	n := s.notify
 	s.notify = make(map[*verifyFuture]struct{})
 	s.notifyLock.Unlock()
-	_ = (&Raft{}).verifyLeader// 会将future放入到每一个follower的 notify
+	_ = (&Raft{}).verifyLeader // 会将future放入到每一个follower的 notify
 	// 确认我们的选举权
 	for v := range n {
 		v.vote(leader)
@@ -305,6 +305,7 @@ func (s *followerReplication) setLastContact() {
 
 // Ph 打印心跳的信息
 func (r *Raft) Ph(req *AppendEntriesRequest, resp *AppendEntriesResponse) {
+	return
 	type A struct {
 		RPCHeader
 		Term              uint64

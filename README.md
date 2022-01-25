@@ -3,7 +3,7 @@
 * Raft 是一种为了管理复制日志的一致性协议
 
 * 复制状态机概念，复制状态机是指每个状态机或系统如果初始状态一致，然后接受的改变状态的命令也一致，最后产生的结果状态也是相同。
- 
+
 ### 二、Raft选举过程
 
 * 选举过程图1（单个节点视角）
@@ -94,9 +94,8 @@
 
 答：这个时候服务应该是不可用的，当然如果要强行提供查询的服务，强一致肯定是无法保证的。
 
-
-
 ### raft-stable.db
+
 ```azure
 CurrentTerm:2
 LastVoteCand: 127.0.0.1:10000
@@ -104,6 +103,7 @@ LastVoteTerm: 2
 ```
 
 ### raft-log.db
+
 ```
 key: 1,value :{Index:1 Term:1 Type:LogConfiguration Data:{Servers:[]} Extensions: AppendedAt:0001-01-01 00:00:00 +0000 UTC}
 key: 2,value :{Index:2 Term:3 Type:LogNoop Data:{Servers:[]} Extensions: AppendedAt:2022-01-24 02:52:29.167131 +0000 UTC}
@@ -128,8 +128,8 @@ key: 98,value :&{Index:98 Term:2 Type:LogCommand Data:[115 101 116 44 97 43 57 5
 key: 99,value :&{Index:99 Term:2 Type:LogCommand Data:[115 101 116 44 97 43 57 54 44 57 54] Extensions:[] AppendedAt:2022-01-20 11:02:36.510897 +0800 CST m=+8.915797453}
 ```
 
-
 ### rpcType
+
 ```azure
 rpcAppendEntries
 rpcRequestVote
@@ -138,6 +138,7 @@ rpcTimeoutNow
 ```
 
 ### Command Type
+
 ```
 AppendEntriesRequest
 RequestVoteRequest
@@ -145,9 +146,10 @@ InstallSnapshotRequest
 TimeoutNowRequest
 ```
 
-
 ### 竞选流程
+
 - con 对每一个启动时制定好的节点进行rpc调用
+
 ```azure
 req := &RequestVoteRequest{
 		RPCHeader:          r.getRPCHeader(),   // 只有协议版本
@@ -159,16 +161,18 @@ req := &RequestVoteRequest{
 }
 RequestVote(本机的逻辑ID, 本机的通信地址, req, &resp.RequestVoteResponse)
 ```
+
 - 远端接收rpc调用
-  - handleCommand
-  - processRPC
-  - requestVote
+    - handleCommand
+    - processRPC
+    - requestVote
 
 当某个节点得到了大多数的请求，自己就会变成leader,此时再有投票请求到来不会,不会对其投票【除非设置LeadershipTransfer=true】
 
 问题：
+
 - 1、集群最初，假设有两个节点都获得大多数投票，都使自身成为了leader？
-  
+
 ```
 在发送心跳的时候,会解决这个问题
 if a.Term > r.getCurrentTerm() || r.getState() != Follower {
@@ -177,7 +181,9 @@ if a.Term > r.getCurrentTerm() || r.getState() != Follower {
     resp.Term = a.Term
 }
 ```
+
 - 2、问什么就算是日志开启了pipeline模式,也是每次都发送一条日志
+
 ```
 因此每次有日志产生， 会 lastIndex++、调用replicateTo【串行】，也就是不会产生日志积累，也就不会在pipe里同时传输多条日志了
 另外、 setNewLogs()函数是具体对AppendEntriesRequest进行日志封装的逻辑
@@ -185,18 +191,24 @@ min(nextIndex+uint64(maxAppendEntries)-1, lastIndex)-nextIndex+1 代表了此次
 
 另外、在非管道模式下，只要成功发送一次AppendEntriesRequest,就会进入到管道模式。也就说尽可能使用管道模式
 ```
+
 - 3、leader节点的崩溃可能会导致日志不一致：旧的leader可能没有完全复制日志中的所有条目。
+
 ```
 在Raft下，leader通过强制followers复制它的日志来处理日志的不一致，不一致的日志会被强制覆盖。
 follower首先找到最近(时间域)的一条日志条目，该日志条目在leader和follower的日志中为一致的。
 然后删除follower上该日志条目所有日志，然后用leader的日志覆盖。
 ```
+
 - 4、打快照的时机
+
 ```
 raft/config.go:137
 SnapshotInterval 快照间隔 检测一次 && log db 增量条数 > SnapshotThreshold
 ```
+
 - 5、latestIndex、commitIndex、applyIndex的区别
+
 ```
 
 ```

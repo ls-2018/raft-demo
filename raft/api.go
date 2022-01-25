@@ -103,6 +103,7 @@ type Raft struct {
 	leaderState leaderState
 
 	// candidateFromLeadershipTransfer 表示  leader -> candidate。这个标志在RequestVoteRequest中被用来表示正在进行leader的转移。进行中。
+	// leader让此节点变成candidate
 	candidateFromLeadershipTransfer bool
 
 	// 服务器的逻辑ID 存储我们的本地服务器ID，用于避免向我们自己发送RPC。

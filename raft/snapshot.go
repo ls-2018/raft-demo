@@ -63,7 +63,7 @@ func (r *Raft) runSnapshots() {
 				r.logger.Error("打快照失败", "error", err)
 			}
 
-		case future := <-r.userSnapshotCh:// 用户主动触发
+		case future := <-r.userSnapshotCh: // 用户主动触发
 			id, err := r.takeSnapshot()
 			if err != nil {
 				r.logger.Error("打快照失败", "error", err)

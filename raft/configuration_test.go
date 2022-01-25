@@ -283,7 +283,6 @@ func TestConfiguration_nextConfiguration_checkConfiguration(t *testing.T) {
 	}
 }
 
-
 func TestConfiguration_encodeDecodeConfiguration(t *testing.T) {
 	decoded := DecodeConfiguration(EncodeConfiguration(sampleConfiguration))
 	if !reflect.DeepEqual(sampleConfiguration, decoded) {

@@ -76,8 +76,13 @@ func main() {
 	http.HandleFunc("/set", httpServer.Set)
 	http.HandleFunc("/get", httpServer.Get)
 	go func() {
-		time.Sleep(time.Second * 5)
-		for i := 0; i < 9200; i++ {
+		time.Sleep(time.Second * 10)
+		//
+		//transfer := httpServer.ctx.LeadershipTransfer()
+		//err2 := transfer.Error()
+		//fmt.Println("err2", err2)
+		//return
+		for i := 0; i < 200; i++ {
 			data := "set" + "," + fmt.Sprintf("a+%d", i) + "," + fmt.Sprintf("%d", i)
 
 			value := httpServer.fsm.DataBase.Get(fmt.Sprintf("a+%d", i))

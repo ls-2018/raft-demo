@@ -21,6 +21,7 @@ type commitment struct {
 	// 这个leader任期的第一个索引：在这个leader可以标记任何已承诺的事情之前，这需要复制到集群的大多数。(根据Raft的承诺规则)
 	startIndex uint64
 }
+
 // newCommitment returns a commitment struct that notifies the provided
 // channel when log entries have been committed. A new commitment struct is
 // created each time this server becomes leader for a particular term.

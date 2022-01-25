@@ -117,7 +117,7 @@ func (r *Raft) leaderLoop() {
 		case <-r.leaderState.stepDown: // over
 			_ = r.handleStaleTerm // 当follower的任期大于当前节点
 			r.setState(Follower)
-		case future := <-r.leadershipTransferCh: // runLeader 监听leader转移
+		case future := <-r.leadershipTransferCh: // runLeader 监听leader转移 ✅
 			if r.getLeadershipTransferInProgress() {
 				// 如果已经在转移中了
 				r.logger.Debug(ErrLeadershipTransferInProgress.Error())
@@ -156,14 +156,10 @@ func (r *Raft) leaderLoop() {
 				}
 			}()
 
-			// leaderState.replState is accessed here before
-			// starting leadership transfer asynchronously because
-			// leaderState is only supposed to be accessed in the
-			// leaderloop.
 			id := future.ID
 			address := future.Address
 			if id == nil {
-				s := r.pickServer()
+				s := r.pickServer() // 获取最有可能成为leader的节点
 				if s != nil {
 					id = &s.ID
 					address = &s.Address
@@ -174,7 +170,7 @@ func (r *Raft) leaderLoop() {
 			}
 			state, ok := r.leaderState.replState[*id]
 			if !ok {
-				doneCh <- fmt.Errorf("cannot find replication state for %v", id)
+				doneCh <- fmt.Errorf("不能到复制集 for %v", id)
 				continue
 			}
 
@@ -351,6 +347,7 @@ func (r *Raft) verifyLeader(v *verifyFuture) {
 	}
 }
 
+// 主动设置的
 func (r *Raft) leadershipTransfer(id ServerID, address ServerAddress, repl *followerReplication, stopCh chan struct{}, doneCh chan error) {
 
 	// 确保我们没有被阻止
@@ -361,7 +358,7 @@ func (r *Raft) leadershipTransfer(id ServerID, address ServerAddress, repl *foll
 	default:
 	}
 
-	// Step 1: set this field which stops this leader from responding to any client requests.
+	// Step 1: 设置此字段将停止该leader对任何客户端请求的响应。
 	r.setLeadershipTransferInProgress(true)
 	defer func() { r.setLeadershipTransferInProgress(false) }()
 
@@ -398,6 +395,8 @@ func (r *Raft) leadershipTransfer(id ServerID, address ServerAddress, repl *foll
 	doneCh <- err
 }
 
+// ------------------------------------ over ------------------------------------
+
 func (r *Raft) setupLeaderState() {
 	r.leaderState.commitCh = make(chan struct{}, 1)
 	r.leaderState.commitment = newCommitment(r.leaderState.commitCh,
@@ -409,8 +408,6 @@ func (r *Raft) setupLeaderState() {
 	r.leaderState.notify = make(map[*verifyFuture]struct{})
 	r.leaderState.stepDown = make(chan struct{}, 1)
 }
-
-// ------------------------------------ over ------------------------------------
 
 // setLeader 是用来修改集群的当前领导者的
 func (r *Raft) setLeader(leader ServerAddress) {
