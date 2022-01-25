@@ -274,7 +274,7 @@ func (s *followerReplication) notifyAll(leader bool) {
 	n := s.notify
 	s.notify = make(map[*verifyFuture]struct{})
 	s.notifyLock.Unlock()
-
+	_ = (&Raft{}).verifyLeader// 会将future放入到每一个follower的 notify
 	// 确认我们的选举权
 	for v := range n {
 		v.vote(leader)
@@ -338,6 +338,7 @@ func (r *Raft) heartbeat(s *followerReplication, stopCh chan struct{}) {
 	for {
 		select {
 		case <-s.notifyCh: // 心跳主动通知
+			_ = r.verifyLeader
 		case <-randomTimeout(r.config().HeartbeatTimeout / 10): //定时  100ms
 		//在100ms内 每循环一次,就会产生一个timer,如果循环太多，可能导致gc飙升
 		case <-stopCh:

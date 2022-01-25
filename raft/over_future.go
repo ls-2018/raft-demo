@@ -225,25 +225,17 @@ type restoreFuture struct {
 type verifyFuture struct {
 	deferError
 	notifyCh   chan *verifyFuture
-	quorumSize int // 竞选获胜的数量
-	votes      int // 投票数
+	quorumSize int // 获胜、应该得到的票数
+	votes      int // 实际得到的投票数
 	voteLock   sync.Mutex
 }
 
-// leadershipTransferFuture is used to track the progress of a leadership
-// transfer internally.
-type leadershipTransferFuture struct {
-	deferError
-
-	ID      *ServerID
-	Address *ServerAddress
-}
-
 // vote 设置响应, 是不是leader
-func (v *verifyFuture) vote(leader bool) {
+func (v *verifyFuture) vote(leader bool) { // 某个节点对此leader进行投票
 	v.voteLock.Lock()
 	defer v.voteLock.Unlock()
 
+	//v.notifyCh== &(Raft{}).verifyCh
 	// 避免已经通知
 	if v.notifyCh == nil {
 		return
@@ -257,12 +249,28 @@ func (v *verifyFuture) vote(leader bool) {
 			// raft/raft.go:152
 			fmt.Println("✈️ ✈️ ✈️", v.votes)
 			v.notifyCh <- v
-			v.notifyCh = nil
+			v.notifyCh = nil // 置空
 		}
 	} else {
 		v.notifyCh <- v
-		v.notifyCh = nil
+		v.notifyCh = nil // 置空
 	}
+}
+
+func TestVerify() {
+	a := &verifyFuture{}
+	a.vote(true)
+	v := <-a.notifyCh
+	if v.votes >= v.quorumSize {
+		fmt.Println("依旧是leader")
+	}
+}
+
+type leadershipTransferFuture struct {
+	deferError
+
+	ID      *ServerID
+	Address *ServerAddress
 }
 
 // appendFuture 用于等待一个流水线上的追加条目RPC。

@@ -180,15 +180,13 @@ func (r *Raft) leaderLoop() {
 
 			go r.leadershipTransfer(*id, *address, state, stopCh, doneCh)
 		case <-r.leaderState.commitCh:
-			// Process the newly committed entries
+			// 处理提交的日志项
 			oldCommitIndex := r.getCommitIndex()
 			commitIndex := r.leaderState.commitment.getCommitIndex()
 			r.setCommitIndex(commitIndex)
 
-			// New configration has been committed, set it as the committed
-			// value.
-			if r.configurations.latestIndex > oldCommitIndex &&
-				r.configurations.latestIndex <= commitIndex {
+			// New configration has been committed, set it as the committed value.
+			if r.configurations.latestIndex > oldCommitIndex && r.configurations.latestIndex <= commitIndex {
 				r.setCommittedConfiguration(r.configurations.latest, r.configurations.latestIndex)
 				if !hasVote(r.configurations.committed, r.localID) {
 					stepDown = true
@@ -231,7 +229,7 @@ func (r *Raft) leaderLoop() {
 					r.logger.Info("removed ourself, transitioning to follower")
 					r.setState(Follower)
 				}
-			}
+			} // over
 		case v := <-r.verifyCh: // 校验还是不是leader
 			_ = r.VerifyLeader
 			if v.quorumSize == 0 {
@@ -240,7 +238,7 @@ func (r *Raft) leaderLoop() {
 
 			} else if v.votes < v.quorumSize {
 				// 提早回来，意味着必须有一个新的领袖
-				r.logger.Warn("new leader elected, stepping down")
+				r.logger.Warn("新领导人当选，下台")
 				r.setState(Follower)
 				delete(r.leaderState.notify, v)
 				for _, repl := range r.leaderState.replState {
@@ -249,13 +247,14 @@ func (r *Raft) leaderLoop() {
 				v.respond(ErrNotLeader)
 
 			} else {
-				// Quorum of members agree, we are still leader
+				// 大多数节点同意、依旧是leader
 				delete(r.leaderState.notify, v)
 				for _, repl := range r.leaderState.replState {
+					// 删除每个节点的 验证请求
 					repl.cleanNotify(v)
 				}
 				v.respond(nil)
-			}
+			} // over
 		case future := <-r.userRestoreCh: // 用户存储快照
 			if r.getLeadershipTransferInProgress() {
 				r.logger.Debug(ErrLeadershipTransferInProgress.Error())
@@ -328,6 +327,7 @@ func (r *Raft) leaderLoop() {
 
 // verifyLeader
 func (r *Raft) verifyLeader(v *verifyFuture) {
+	// 主线程接到请求，会把v放入r.leaderState.notify,以及每个follower的notify
 	// 现任领导人总是为自己投票
 	v.votes = 1
 
@@ -339,7 +339,7 @@ func (r *Raft) verifyLeader(v *verifyFuture) {
 	}
 
 	// 追踪请求
-	v.notifyCh = r.verifyCh
+	v.notifyCh = r.verifyCh // 用于接收其它go routine 发过来的leader信号
 	r.leaderState.notify[v] = struct{}{}
 
 	// 立即引发心跳
