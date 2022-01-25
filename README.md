@@ -245,5 +245,8 @@ SnapshotInterval 快照间隔 检测一次 && log db 增量条数 > SnapshotThre
 通过调用 requestConfigChange 
 先将完整的 Configuration 同步给所有的节点
 在重新运行startStopReplication 会对新增的节点启动心跳。。。 ;删除的节点取消心跳...
+
+如果集群本身已有数据,那么重新启动时设置的--raft_cluster没有作用; detail BootstrapCluster函数
+
 ```
 
