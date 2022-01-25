@@ -256,7 +256,6 @@ func (r *Raft) setNewLogs(req *AppendEntriesRequest, nextIndex, lastIndex uint64
 	req.Entries = make([]*Log, 0, maxAppendEntries)
 
 	maxIndex := min(nextIndex+uint64(maxAppendEntries)-1, lastIndex) // 日志最大索引 要发送哪
-	fmt.Println("日志复制信息:-----> ", nextIndex, maxIndex)
 	for i := nextIndex; i <= maxIndex; i++ {
 		oldLog := new(Log)
 		if err := r.logs.GetLog(i, oldLog); err != nil {

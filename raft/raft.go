@@ -19,45 +19,6 @@ var (
 	keyLastVoteCand = []byte("LastVoteCand")
 )
 
-// getRPCHeader returns an initialized RPCHeader struct for the given
-// Raft instance. This structure is sent along with RPC requests and
-// responses.
-func (r *Raft) getRPCHeader() RPCHeader {
-	return RPCHeader{
-		ProtocolVersion: r.config().ProtocolVersion,
-	}
-}
-
-// checkRPCHeader  raft处理rpc消息的主逻辑
-func (r *Raft) checkRPCHeader(rpc RPC) error {
-	// 获取rpc消息的头信息
-	wh, ok := rpc.Command.(WithRPCHeader)
-	if !ok {
-		return fmt.Errorf("RPC没有头信息")
-	}
-	header := wh.GetRPCHeader()
-
-	// 首先检查协议版本  0，1，2，3
-	if header.ProtocolVersion < ProtocolVersionMin || header.ProtocolVersion > ProtocolVersionMax {
-		return ErrUnsupportedProtocol
-	}
-
-	// 第二个检查是，考虑到我们当前配置运行的协议，我们是否应该支持这个消息。
-	// 这将放弃对协议版本0的支持，从协议版本2开始，这是目前我们想要的，一般情况下，支持一个版本后。
-	// 我们可能需要重新审视这个策略，这取决于未来协议的 的变化，我们可能需要重新审视这个政策。
-	// 请求的协议版本，不能低于当前版本-1
-	if header.ProtocolVersion < r.config().ProtocolVersion-1 {
-		return ErrUnsupportedProtocol
-	}
-
-	return nil
-}
-
-// OK
-func getSnapshotVersion(protocolVersion ProtocolVersion) SnapshotVersion {
-	return 1
-}
-
 // commitTuple is used to send an index that was committed,
 // with an optional associated future that should be invoked.
 type commitTuple struct {
@@ -76,9 +37,7 @@ type leaderState struct {
 	stepDown                     chan struct{}
 }
 
-// requestConfigChange is a helper for the above functions that make
-// configuration change requests. 'req' describes the change. For timeout,
-// see AddVoter.
+// requestConfigChange
 func (r *Raft) requestConfigChange(req configurationChangeRequest, timeout time.Duration) IndexFuture {
 	var timer <-chan time.Time
 	if timeout > 0 {
@@ -95,29 +54,6 @@ func (r *Raft) requestConfigChange(req configurationChangeRequest, timeout time.
 		return future
 	case <-r.shutdownCh:
 		return errorFuture{ErrRaftShutdown}
-	}
-}
-
-// run 是一个运行Raft FSM的长期运行的goroutine。
-func (r *Raft) run() {
-	for {
-		select {
-		case <-r.shutdownCh:
-			// 清除领导，防止转发
-			r.setLeader("")
-			return
-		default:
-		}
-
-		// 进入一个子FSM
-		switch r.getState() {
-		case Follower:
-			r.runFollower()
-		case Candidate:
-			r.runCandidate()
-		case Leader:
-			r.runLeader()
-		}
 	}
 }
 
@@ -155,7 +91,7 @@ func (r *Raft) startStopReplication() {
 			_ = r.electSelf // 触发一下,第一次也没数据
 			asyncNotifyCh(s.triggerCh)
 		} else if ok {
-			// 在变成非leader 以及 重新变成leader后，走这里
+			// 在变成非leader 以及 重新变成leader后、或者节点配置变更，走这里
 			s.peerLock.RLock()
 			peer := s.peer
 			s.peerLock.RUnlock()
@@ -169,12 +105,12 @@ func (r *Raft) startStopReplication() {
 		}
 	}
 	//
-	// Stop replication goroutines that need stopping
+	// 停止需要停止的复制goroutines
 	for serverID, repl := range r.leaderState.replState {
 		if inConfig[serverID] {
 			continue
 		}
-		// Replicate up to lastIdx and stop
+		// 复制到最新就停止
 		r.logger.Info("removed peer, stopping replication", "peer", serverID, "last-index", lastIdx)
 		repl.stopCh <- lastIdx
 		close(repl.stopCh)
@@ -183,132 +119,12 @@ func (r *Raft) startStopReplication() {
 
 }
 
-// configurationChangeChIfStable returns r.configurationChangeCh if it's safe
-// to process requests from it, or nil otherwise. This must only be called
-// from the main thread.
-//
-// Note that if the conditions here were to change outside of leaderLoop to take
-// this from nil to non-nil, we would need leaderLoop to be kicked.
 func (r *Raft) configurationChangeChIfStable() chan *configurationChangeFuture {
-	// Have to wait until:
-	// 1. The latest configuration is committed, and
-	// 2. This leader has committed some entry (the noop) in this term
-	//    https://groups.google.com/forum/#!msg/raft-dev/t4xj6dJTP6E/d2D9LrWRza8J
 	if r.configurations.latestIndex == r.configurations.committedIndex &&
 		r.getCommitIndex() >= r.leaderState.commitment.startIndex {
 		return r.configurationChangeCh
 	}
 	return nil
-}
-
-// timeoutNow 当leader收到一个超时信号
-func (r *Raft) timeoutNow(rpc RPC, req *TimeoutNowRequest) {
-	r.setLeader("")
-	r.setState(Candidate)
-	r.candidateFromLeadershipTransfer = true
-	rpc.Respond(&TimeoutNowResponse{}, nil)
-}
-
-// pickServer returns the follower that is most up to date and participating in quorum.
-// Because it accesses leaderstate, it should only be called from the leaderloop.
-func (r *Raft) pickServer() *Server {
-	var pick *Server
-	var current uint64
-	for _, server := range r.configurations.latest.Servers {
-		if server.ID == r.localID || server.Suffrage != Voter {
-			continue
-		}
-		state, ok := r.leaderState.replState[server.ID]
-		if !ok {
-			continue
-		}
-		nextIdx := atomic.LoadUint64(&state.nextIndex)
-		if nextIdx > current {
-			current = nextIdx
-			tmp := server
-			pick = &tmp
-		}
-	}
-	return pick
-}
-
-// appendConfigurationEntry changes the configuration and adds a new
-// configuration entry to the log. This must only be called from the
-// main thread.
-func (r *Raft) appendConfigurationEntry(future *configurationChangeFuture) {
-	configuration, err := nextConfiguration(r.configurations.latest, r.configurations.latestIndex, future.req)
-	if err != nil {
-		future.respond(err)
-		return
-	}
-
-	r.logger.Info("updating configuration",
-		"command", future.req.command,
-		"server-id", future.req.serverID,
-		"server-addr", future.req.serverAddress,
-		"servers", hclog.Fmt("%+v", configuration.Servers))
-
-	// In pre-ID compatibility mode we translate all configuration changes
-	// in to an old remove peer message, which can handle all supported
-	// cases for peer changes in the pre-ID world (adding and removing
-	// voters). Both add peer and remove peer log entries are handled
-	// similarly on old Raft servers, but remove peer does extra checks to
-	// see if a leader needs to step down. Since they both assert the full
-	// configuration, then we can safely call remove peer for everything.
-
-	future.log = Log{
-		Type: LogConfiguration,
-		Data: EncodeConfiguration(configuration),
-	}
-
-	r.dispatchLogs([]*logFuture{&future.logFuture})
-	index := future.Index()
-	r.setLatestConfiguration(configuration, index)
-	r.leaderState.commitment.setConfiguration(configuration)
-	r.startStopReplication()
-}
-
-// dispatchLog 在leader层被调用，以推送日志到磁盘。 标记它 并开始对其进行复制。不会并发调用
-func (r *Raft) dispatchLogs(applyLogs []*logFuture) {
-	now := time.Now()
-
-	term := r.getCurrentTerm()    // 当前任期
-	lastIndex := r.getLastIndex() // 最新的日志索引
-
-	n := len(applyLogs)
-	logs := make([]*Log, n)
-
-	for idx, applyLog := range applyLogs {
-		// 对即将写入磁盘的LogFuture结构体设置一些信息
-		applyLog.dispatch = now
-		lastIndex++
-		applyLog.log.Index = lastIndex
-		applyLog.log.Term = term
-		applyLog.log.AppendedAt = now
-		logs[idx] = &applyLog.log
-		r.leaderState.inflight.PushBack(applyLog)
-	}
-
-	// 在本地写入日志条目
-	if err := r.logs.StoreLogs(logs); err != nil {
-		r.logger.Error("提交日志失败", "error", err)
-		// 设置LogFuture的响应
-		for _, applyLog := range applyLogs {
-			applyLog.respond(err)
-		}
-		// 更改状态
-		r.setState(Follower)
-		return
-	}
-	r.leaderState.commitment.match(r.localID, lastIndex)
-
-	// 更新最后的日志，它现在已经在磁盘上了,但并没有commit
-	r.setLastLog(lastIndex, term)
-
-	// 将新的日志通知给复制者
-	for _, f := range r.leaderState.replState {
-		asyncNotifyCh(f.triggerCh)
-	}
 }
 
 func (r *Raft) processLogs(index uint64, futures map[uint64]*logFuture) {
@@ -407,6 +223,168 @@ func (r *Raft) prepareLog(l *Log, future *logFuture) *commitTuple {
 }
 
 // ------------------------------------ over ------------------------------------
+
+// appendConfigurationEntry 更改配置并在日志中添加一个新的配置条目。这必须只从主线程调用。
+func (r *Raft) appendConfigurationEntry(future *configurationChangeFuture) {
+	configuration, err := nextConfiguration(r.configurations.latest, r.configurations.latestIndex, future.req)
+	if err != nil {
+		future.respond(err)
+		return
+	}
+
+	r.logger.Info("更新配置",
+		"command", future.req.command,
+		"server-id", future.req.serverID,
+		"server-addr", future.req.serverAddress,
+		"servers", hclog.Fmt("%+v", configuration.Servers))
+
+	future.log = Log{
+		Type: LogConfiguration,
+		Data: EncodeConfiguration(configuration),
+	}
+
+	r.dispatchLogs([]*logFuture{&future.logFuture})
+	index := future.Index()
+	r.setLatestConfiguration(configuration, index)
+	r.leaderState.commitment.setConfiguration(configuration)
+	r.startStopReplication()
+}
+
+// run 是一个运行Raft FSM的长期运行的goroutine。
+func (r *Raft) run() {
+	for {
+		select {
+		case <-r.shutdownCh:
+			// 清除领导，防止转发
+			r.setLeader("")
+			return
+		default:
+		}
+
+		// 进入一个子FSM
+		switch r.getState() {
+		case Follower:
+			r.runFollower()
+		case Candidate:
+			r.runCandidate()
+		case Leader:
+			r.runLeader()
+		}
+	}
+}
+
+// getRPCHeader returns an initialized RPCHeader struct for the given
+// Raft instance. This structure is sent along with RPC requests and
+// responses.
+func (r *Raft) getRPCHeader() RPCHeader {
+	return RPCHeader{
+		ProtocolVersion: r.config().ProtocolVersion,
+	}
+}
+
+// checkRPCHeader  raft处理rpc消息的主逻辑
+func (r *Raft) checkRPCHeader(rpc RPC) error {
+	// 获取rpc消息的头信息
+	wh, ok := rpc.Command.(WithRPCHeader)
+	if !ok {
+		return fmt.Errorf("RPC没有头信息")
+	}
+	header := wh.GetRPCHeader()
+
+	// 首先检查协议版本  0，1，2，3
+	if header.ProtocolVersion < ProtocolVersionMin || header.ProtocolVersion > ProtocolVersionMax {
+		return ErrUnsupportedProtocol
+	}
+
+	// 第二个检查是，考虑到我们当前配置运行的协议，我们是否应该支持这个消息。
+	// 这将放弃对协议版本0的支持，从协议版本2开始，这是目前我们想要的，一般情况下，支持一个版本后。
+	// 我们可能需要重新审视这个策略，这取决于未来协议的 的变化，我们可能需要重新审视这个政策。
+	// 请求的协议版本，不能低于当前版本-1
+	if header.ProtocolVersion < r.config().ProtocolVersion-1 {
+		return ErrUnsupportedProtocol
+	}
+
+	return nil
+}
+
+// OK
+func getSnapshotVersion(protocolVersion ProtocolVersion) SnapshotVersion {
+	return 1
+}
+
+// pickServer 从众多的参与投票的follower 中选出一个日志最新的节点
+func (r *Raft) pickServer() *Server {
+	var pick *Server
+	var current uint64
+	for _, server := range r.configurations.latest.Servers {
+		if server.ID == r.localID || server.Suffrage != Voter {
+			continue
+		}
+		state, ok := r.leaderState.replState[server.ID]
+		if !ok {
+			continue
+		}
+		nextIdx := atomic.LoadUint64(&state.nextIndex)
+		if nextIdx > current {
+			current = nextIdx
+			tmp := server
+			pick = &tmp
+		}
+	}
+	return pick
+}
+
+// timeoutNow 当leader收到一个超时信号
+func (r *Raft) timeoutNow(rpc RPC, req *TimeoutNowRequest) {
+	r.setLeader("")
+	r.setState(Candidate)
+	r.candidateFromLeadershipTransfer = true
+	rpc.Respond(&TimeoutNowResponse{}, nil)
+}
+
+// dispatchLog 在leader层被调用，以推送日志到磁盘。 标记它 并开始对其进行复制。不会并发调用
+func (r *Raft) dispatchLogs(applyLogs []*logFuture) {
+	now := time.Now()
+
+	term := r.getCurrentTerm()    // 当前任期
+	lastIndex := r.getLastIndex() // 最新的日志索引
+
+	n := len(applyLogs)
+	logs := make([]*Log, n)
+
+	for idx, applyLog := range applyLogs {
+		// 对即将写入磁盘的LogFuture结构体设置一些信息
+		applyLog.dispatch = now
+		lastIndex++
+		applyLog.log.Index = lastIndex
+		applyLog.log.Term = term
+		applyLog.log.AppendedAt = now
+		logs[idx] = &applyLog.log
+		r.leaderState.inflight.PushBack(applyLog)
+	}
+
+	// 在本地写入日志条目
+	if err := r.logs.StoreLogs(logs); err != nil {
+		r.logger.Error("提交日志失败", "error", err)
+		// 设置LogFuture的响应
+		for _, applyLog := range applyLogs {
+			applyLog.respond(err)
+		}
+		// 更改状态
+		r.setState(Follower)
+		return
+	}
+	r.leaderState.commitment.match(r.localID, lastIndex)
+
+	// 更新最后的日志，它现在已经在磁盘上了,但并没有commit
+	r.setLastLog(lastIndex, term)
+
+	// 将新的日志通知给复制者
+	for _, f := range r.leaderState.replState {
+		asyncNotifyCh(f.triggerCh)
+	}
+}
+
 // 尝试设置一个初始的集群的初始配置；   只有在跟随者状态下才有意义。
 func (r *Raft) liveBootstrap(configuration Configuration) error {
 	// 使用初始化前API进行静态更新。
@@ -423,7 +401,7 @@ func (r *Raft) liveBootstrap(configuration Configuration) error {
 	}
 	r.setCurrentTerm(1)
 	r.setLastLog(entry.Index, entry.Term)
-	return r.processConfigurationLogEntry(&entry)
+	return r.processConfigurationLogEntry(&entry) // 好像也没干啥，就是更新了一下索引
 }
 
 // quorumSize 用来返回竞选者一半的大小。 //2 + 1
@@ -526,7 +504,7 @@ func (r *Raft) setCurrentTerm(t uint64) {
 }
 
 // setState 是用来更新当前状态。任何状态转换都会导致已知的领导者被清空。这意味着只有在更新状态后才应设置领导者。
-func (r *Raft) setState(state RaftState) {
+func (r *Raft) setState(state State) {
 	r.setLeader("")
 	r.raftState.setState(state)
 }

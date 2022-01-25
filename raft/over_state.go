@@ -5,17 +5,17 @@ import (
 	"sync/atomic"
 )
 
-// RaftState 捕获一个Raft节点的状态。跟随者、候选者、领导者或关闭。
-type RaftState uint32
+// State 捕获一个Raft节点的状态。跟随者、候选者、领导者或关闭。
+type State uint32
 
 const (
-	Follower RaftState = iota
+	Follower State = iota
 	Candidate
 	Leader
 	Shutdown
 )
 
-func (s RaftState) String() string {
+func (s State) String() string {
 	switch s {
 	case Follower:
 		return "Follower"
@@ -54,18 +54,18 @@ type raftState struct {
 	routinesGroup sync.WaitGroup
 
 	// 当前状态
-	state RaftState
+	state State
 }
 
 // ok
-func (r *raftState) getState() RaftState {
+func (r *raftState) getState() State {
 	// 初始化时，因为值为0 ,本身就是follower
 	stateAddr := (*uint32)(&r.state)
-	return RaftState(atomic.LoadUint32(stateAddr))
+	return State(atomic.LoadUint32(stateAddr))
 }
 
 // OK
-func (r *raftState) setState(s RaftState) {
+func (r *raftState) setState(s State) {
 	stateAddr := (*uint32)(&r.state)
 	atomic.StoreUint32(stateAddr, uint32(s))
 }

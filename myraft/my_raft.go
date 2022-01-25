@@ -77,6 +77,6 @@ func Bootstrap(rf *raft.Raft, raftId, raftAddr, raftCluster string) {
 		configuration.Servers = append(configuration.Servers, server)
 	}
 
-	rf.BootstrapCluster(configuration)
+	rf.BootstrapCluster(configuration) // 好像也没干啥，就是往db 写了条configuration log
 	return
 }

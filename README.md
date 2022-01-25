@@ -145,7 +145,22 @@ InstallSnapshotRequest
 TimeoutNowRequest
 ```
 
-
+## 关键数
+- state
+  - Follower、Candidate、Leader、Shutdown
+- term
+- last_log_index
+- last_log_term
+- commit_index
+- applied_index
+- fsm_pending
+- last_snapshot_index
+- last_snapshot_term
+- latest_configuration 
+  - 包含每个服务器的id、其选举权状态和地址
+- last_contact
+  - 上一次通信的时间
+- num_peers
 
 ### 竞选流程
 - con 对每一个启动时制定好的节点进行rpc调用
@@ -197,3 +212,8 @@ follower首先找到最近(时间域)的一条日志条目，该日志条目在l
 raft/config.go:137
 SnapshotInterval 快照间隔 检测一次 && log db 增量条数 > SnapshotThreshold
 ```
+  5、latestIndex、commitIndex、applyIndex的区别
+```
+
+```
+

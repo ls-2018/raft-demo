@@ -114,7 +114,8 @@ func (r *Raft) leaderLoop() {
 		select {
 		case rpc := <-r.rpcCh: // over
 			r.processRPC(rpc)
-		case <-r.leaderState.stepDown:
+		case <-r.leaderState.stepDown: // over
+			_ = r.handleStaleTerm // 当follower的任期大于当前节点
 			r.setState(Follower)
 		case future := <-r.leadershipTransferCh: // runLeader 监听leader转移
 			if r.getLeadershipTransferInProgress() {
@@ -231,7 +232,8 @@ func (r *Raft) leaderLoop() {
 					r.setState(Follower)
 				}
 			}
-		case v := <-r.verifyCh:
+		case v := <-r.verifyCh: // 校验还是不是leader
+			_ = r.VerifyLeader
 			if v.quorumSize == 0 {
 				// 刚发送，开始核查
 				r.verifyLeader(v)
@@ -254,7 +256,7 @@ func (r *Raft) leaderLoop() {
 				}
 				v.respond(nil)
 			}
-		case future := <-r.userRestoreCh:
+		case future := <-r.userRestoreCh: // 用户存储快照
 			if r.getLeadershipTransferInProgress() {
 				r.logger.Debug(ErrLeadershipTransferInProgress.Error())
 				future.respond(ErrLeadershipTransferInProgress)
@@ -262,7 +264,7 @@ func (r *Raft) leaderLoop() {
 			}
 			err := r.restoreUserSnapshot(future.meta, future.reader)
 			future.respond(err)
-		case future := <-r.configurationsCh:
+		case future := <-r.configurationsCh: // over 获取配置
 			if r.getLeadershipTransferInProgress() {
 				r.logger.Debug(ErrLeadershipTransferInProgress.Error())
 				future.respond(ErrLeadershipTransferInProgress)
@@ -270,7 +272,7 @@ func (r *Raft) leaderLoop() {
 			}
 			future.configurations = r.configurations.Clone()
 			future.respond(nil)
-		case future := <-r.configurationChangeChIfStable():
+		case future := <-r.configurationChangeChIfStable(): // 节点配置变更通道
 			if r.getLeadershipTransferInProgress() {
 				r.logger.Debug(ErrLeadershipTransferInProgress.Error())
 				future.respond(ErrLeadershipTransferInProgress)

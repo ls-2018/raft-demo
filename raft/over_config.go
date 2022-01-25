@@ -94,8 +94,7 @@ type Config struct {
 
 	// NoSnapshotRestoreOnStart
 	// 控制raft是否会在启动时恢复快照到FSM。如果你的FSM是从raft快照以外的其他机制中恢复的，这就很有用。
-	// 快照元数据仍将被用于初始化筏的配置和索引值。
-
+	// 快照元数据仍将被用于初始化raft的配置和索引值。
 	NoSnapshotRestoreOnStart bool
 
 	// skipStartup 允许NewRaft()绕过所有的后台工作程序。

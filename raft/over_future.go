@@ -10,13 +10,6 @@ import (
 )
 
 type Future interface {
-	// Error blocks until the future arrives and then returns the error status
-	// of the future. This may be called any number of times - all calls will
-	// return the same value, however is not OK to call this method twice
-	// concurrently on the same Future instance.
-	// Error will only return generic errors related to raft, such
-	// as ErrLeadershipLost, or ErrRaftShutdown. Some operations, such as
-	// ApplyLog, may also return errors from other methods.
 	Error() error
 }
 
@@ -40,8 +33,23 @@ type ApplyFuture interface {
 
 type ConfigurationFuture interface {
 	IndexFuture
-
 	Configuration() Configuration
+}
+
+// configurationsFuture 是用来检索当前的配置的。这是 用来允许在主线程之外安全地访问这些信息。
+type configurationsFuture struct {
+	deferError
+	configurations configurations
+}
+
+// Configuration 返回最新的配置
+func (c *configurationsFuture) Configuration() Configuration {
+	return c.configurations.latest
+}
+
+// Index 返回最新的配置索引
+func (c *configurationsFuture) Index() uint64 {
+	return c.configurations.latestIndex
 }
 
 // SnapshotFuture is used for waiting on a user-triggered snapshot to complete.
@@ -116,9 +124,7 @@ func (d *deferError) respond(err error) {
 	d.responded = true
 }
 
-// There are several types of requests that cause a configuration entry to
-// be appended to the log. These are encoded here for leaderLoop() to process.
-// This is internal to a single server.
+//有几种类型的请求会导致配置条目被添加到日志中。这些在这里被编码，供leaderLoop()处理。这是一个单一服务器的内部。
 type configurationChangeFuture struct {
 	logFuture
 	req configurationChangeRequest
@@ -231,22 +237,6 @@ type leadershipTransferFuture struct {
 
 	ID      *ServerID
 	Address *ServerAddress
-}
-
-// configurationsFuture 是用来检索当前的配置的。这是 用来允许在主线程之外安全地访问这些信息。
-type configurationsFuture struct {
-	deferError
-	configurations configurations
-}
-
-// Configuration returns the latest configuration in use by Raft.
-func (c *configurationsFuture) Configuration() Configuration {
-	return c.configurations.latest
-}
-
-// Index returns the index of the latest configuration in use by Raft.
-func (c *configurationsFuture) Index() uint64 {
-	return c.configurations.latestIndex
 }
 
 // vote 设置响应, 是不是leader

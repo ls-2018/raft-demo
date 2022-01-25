@@ -28,8 +28,8 @@ func init() {
 	flag.StringVar(&httpAddr, "http_addr", "127.0.0.1:10001", "http listen addr")
 	flag.StringVar(&raftAddr, "raft_addr", "127.0.0.1:10000", "raft listen addr")
 	flag.StringVar(&raftId, "raft_id", "1", "raft id")
-	//flag.StringVar(&raftCluster, "raft_cluster", "1/127.0.0.1:10000,2/127.0.0.1:20000", "cluster info")
-	flag.StringVar(&raftCluster, "raft_cluster", "1/127.0.0.1:10000", "cluster info")
+	flag.StringVar(&raftCluster, "raft_cluster", "1/127.0.0.1:10000,2/127.0.0.1:20000", "cluster info")
+	//flag.StringVar(&raftCluster, "raft_cluster", "1/127.0.0.1:10000", "cluster info")
 }
 
 // go build -mod vendor
