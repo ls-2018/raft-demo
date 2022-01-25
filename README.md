@@ -145,22 +145,6 @@ InstallSnapshotRequest
 TimeoutNowRequest
 ```
 
-## 关键数
-- state
-  - Follower、Candidate、Leader、Shutdown
-- term
-- last_log_index
-- last_log_term
-- commit_index
-- applied_index
-- fsm_pending
-- last_snapshot_index
-- last_snapshot_term
-- latest_configuration 
-  - 包含每个服务器的id、其选举权状态和地址
-- last_contact
-  - 上一次通信的时间
-- num_peers
 
 ### 竞选流程
 - con 对每一个启动时制定好的节点进行rpc调用
@@ -183,7 +167,7 @@ RequestVote(本机的逻辑ID, 本机的通信地址, req, &resp.RequestVoteResp
 当某个节点得到了大多数的请求，自己就会变成leader,此时再有投票请求到来不会,不会对其投票【除非设置LeadershipTransfer=true】
 
 问题：
-  1、集群最初，假设有两个节点都获得大多数投票，都使自身成为了leader？
+- 1、集群最初，假设有两个节点都获得大多数投票，都使自身成为了leader？
   
 ```
 在发送心跳的时候,会解决这个问题
@@ -193,7 +177,7 @@ if a.Term > r.getCurrentTerm() || r.getState() != Follower {
     resp.Term = a.Term
 }
 ```
-  2、问什么就算是日志开启了pipeline模式,也是每次都发送一条日志
+- 2、问什么就算是日志开启了pipeline模式,也是每次都发送一条日志
 ```
 因此每次有日志产生， 会 lastIndex++、调用replicateTo【串行】，也就是不会产生日志积累，也就不会在pipe里同时传输多条日志了
 另外、 setNewLogs()函数是具体对AppendEntriesRequest进行日志封装的逻辑
@@ -201,18 +185,18 @@ min(nextIndex+uint64(maxAppendEntries)-1, lastIndex)-nextIndex+1 代表了此次
 
 另外、在非管道模式下，只要成功发送一次AppendEntriesRequest,就会进入到管道模式。也就说尽可能使用管道模式
 ```
-  3、leader节点的崩溃可能会导致日志不一致：旧的leader可能没有完全复制日志中的所有条目。
+- 3、leader节点的崩溃可能会导致日志不一致：旧的leader可能没有完全复制日志中的所有条目。
 ```
 在Raft下，leader通过强制followers复制它的日志来处理日志的不一致，不一致的日志会被强制覆盖。
 follower首先找到最近(时间域)的一条日志条目，该日志条目在leader和follower的日志中为一致的。
 然后删除follower上该日志条目所有日志，然后用leader的日志覆盖。
 ```
-  4、打快照的时机
+- 4、打快照的时机
 ```
 raft/config.go:137
 SnapshotInterval 快照间隔 检测一次 && log db 增量条数 > SnapshotThreshold
 ```
-  5、latestIndex、commitIndex、applyIndex的区别
+- 5、latestIndex、commitIndex、applyIndex的区别
 ```
 
 ```

@@ -61,7 +61,7 @@ func (r *Raft) runFSM() {
 		// Update the indexes
 		lastIndex = req.log.Index
 		lastTerm = req.log.Term
-	}
+	} // over
 
 	commitBatch := func(reqs []*commitTuple) {
 		if !batchingEnabled {
@@ -71,8 +71,7 @@ func (r *Raft) runFSM() {
 			return
 		}
 
-		// Only send LogCommand and LogConfiguration log types. LogBarrier types
-		// will not be sent to the FSM.
+		// 只发送LogCommand和LogConfiguration日志类型。LogBarrier类型不会发送到FSM。
 		shouldSend := func(l *Log) bool {
 			switch l.Type {
 			case LogCommand, LogConfiguration:
@@ -119,7 +118,7 @@ func (r *Raft) runFSM() {
 				req.future.respond(nil)
 			}
 		}
-	}
+	} // over
 
 	restore := func(req *restoreFuture) {
 		// 打开一个快照
@@ -140,10 +139,9 @@ func (r *Raft) runFSM() {
 		lastIndex = meta.Index
 		lastTerm = meta.Term
 		req.respond(nil)
-	}
+	} // over
 
 	snapshot := func(req *reqSnapshotFuture) {
-		// Is there something to snapshot?
 		if lastIndex == 0 {
 			req.respond(ErrNothingNewToSnapshot)
 			return
@@ -157,13 +155,13 @@ func (r *Raft) runFSM() {
 		req.term = lastTerm
 		req.snapshot = snap
 		req.respond(err)
-	}
+	} // over
 
 	for {
 		select {
 		case ptr := <-r.fsmMutateCh: // 用来向FSM发送状态变化的更新,恢复快照
 			switch req := ptr.(type) {
-			case []*commitTuple:
+			case []*commitTuple: // 处理已提交的日志
 				_ = r.processLogs
 				// 在应用日志时，它接收指向commitTuple结构的指针;
 				commitBatch(req)

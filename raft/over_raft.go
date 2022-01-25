@@ -37,6 +37,8 @@ type leaderState struct {
 	stepDown                     chan struct{}
 }
 
+// ------------------------------------ over ------------------------------------
+
 // requestConfigChange
 func (r *Raft) requestConfigChange(req configurationChangeRequest, timeout time.Duration) IndexFuture {
 	var timer <-chan time.Time
@@ -105,11 +107,12 @@ func (r *Raft) startStopReplication() {
 		}
 	}
 	//
-	// 停止需要停止的复制goroutines
+	// 停止需要停止的复制goroutines；  如果说启动时 inConfig、replState肯定是一样的
 	for serverID, repl := range r.leaderState.replState {
 		if inConfig[serverID] {
 			continue
 		}
+		// TODO 什么时候会走到这里
 		// 复制到最新就停止
 		r.logger.Info("removed peer, stopping replication", "peer", serverID, "last-index", lastIdx)
 		repl.stopCh <- lastIdx
@@ -196,11 +199,11 @@ func (r *Raft) processLogs(index uint64, futures map[uint64]*logFuture) {
 	r.setLastApplied(index)
 }
 
-// processLog is invoked to process the application of a single committed log entry.
+// 调用processLog来处理单个已提交日志条目的应用程序。
 func (r *Raft) prepareLog(l *Log, future *logFuture) *commitTuple {
 	switch l.Type {
 	case LogBarrier:
-		// Barrier is handled by the FSM
+		// Barrier由FSM处理
 		fallthrough
 
 	case LogCommand:
@@ -221,8 +224,6 @@ func (r *Raft) prepareLog(l *Log, future *logFuture) *commitTuple {
 
 	return nil
 }
-
-// ------------------------------------ over ------------------------------------
 
 // appendConfigurationEntry 更改配置并在日志中添加一个新的配置条目。这必须只从主线程调用。
 func (r *Raft) appendConfigurationEntry(future *configurationChangeFuture) {
