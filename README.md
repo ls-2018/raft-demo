@@ -214,23 +214,23 @@ SnapshotInterval 快照间隔 检测一次 && log db 增量条数 > SnapshotThre
 
 ### 一条消息提交之后的流程
 
-- 1、Apply(cmd []byte, timeout time.Duration) ApplyFuture
+```- 1、Apply(cmd []byte, timeout time.Duration) ApplyFuture
     - case r.applyCh <- logFuture:
     - case newLog := <-r.applyCh:
-    - r.dispatchLogs(ready)                                          更新了lastIndex
-        - asyncNotifyCh(f.triggerCh)                                   触发每个follower的写操作
+    - r.dispatchLogs(ready)                                                 更新了lastIndex
+        - asyncNotifyCh(f.triggerCh)                                        触发每个follower的写操作
         - case <-s.triggerCh:
         - shouldStop = r.replicateTo(f, lastLogIdx)
-            - r.trans.AppendEntries(peer.ID, peer.Address, &req, &resp); follower会更新commit
+            - r.trans.AppendEntries(peer.ID, peer.Address, &req, &resp);    follower会更新commit
             - updateLastAppended(f, &req)              follower写成功会触发
-                - f.commitment.match(f.peer.ID, last.Index)                r.leaderState.commitment
-                    - c.recalculate()                                        判断leader是否commit
-    - asyncNotifyCh(c.commitCh)                                      newCommitment(r.leaderState.commitCh
-    - case <-r.leaderState.commitCh:                                 更新commitIndex
+                - f.commitment.match(f.peer.ID, last.Index)                 r.leaderState.commitment
+                    - c.recalculate()                                       判断leader是否commit
+    - asyncNotifyCh(c.commitCh)                                             newCommitment(r.leaderState.commitCh
+    - case <-r.leaderState.commitCh:                                        更新commitIndex
     - r.processLogs(lastIdxInGroup, groupFutures)
     - applyBatch(batch)
     - case ptr := <-r.fsmMutateCh
-    - commitBatch(req)                                               存储到FSM
+    - commitBatch(req)                                                      存储到FSM
 
 
-- 2、ApplyFuture.Error()等待 
+- 2、ApplyFuture.Error()等待 ```
