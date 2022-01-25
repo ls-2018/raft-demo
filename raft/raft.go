@@ -244,7 +244,7 @@ func (r *Raft) appendConfigurationEntry(future *configurationChangeFuture) {
 		Data: EncodeConfiguration(configuration),
 	}
 
-	r.dispatchLogs([]*logFuture{&future.logFuture})
+	r.dispatchLogs([]*logFuture{&future.logFuture})//虽说已经发送了往各个follower复制日志的信号，但並沒有等待日志commit啊
 	index := future.Index()
 	r.setLatestConfiguration(configuration, index)
 	r.leaderState.commitment.setConfiguration(configuration)

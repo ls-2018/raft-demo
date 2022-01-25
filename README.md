@@ -49,7 +49,7 @@
             - updateLastAppended(f, &req)                                   follower写成功会触发
                 - f.commitment.match(f.peer.ID, last.Index)                 r.leaderState.commitment
                     - c.recalculate()                                       判断leader是否commit
-    - asyncNotifyCh(c.commitCh)                                             newCommitment(r.leaderState.commitCh
+        - asyncNotifyCh(c.commitCh)                                             newCommitment(r.leaderState.commitCh
     - case <-r.leaderState.commitCh:                                        更新commitIndex
     - r.processLogs(lastIdxInGroup, groupFutures)
     - applyBatch(batch)
@@ -243,8 +243,9 @@ SnapshotInterval 快照间隔 检测一次 && log db 增量条数 > SnapshotThre
 - 6、集群节点变更
 ```
 通过调用 requestConfigChange 
-先将完整的 Configuration 同步给所有的节点
-在重新运行startStopReplication 会对新增的节点启动心跳。。。 ;删除的节点取消心跳...
+先将完整的 Configuration 异步同步给所有的节点
+然后再setConfiguration时等待commit以及recalculate 
+在重新运行 RstartStopReplication 会对新增的节点启动心跳。。。 ;删除的节点取消心跳...
 
 如果集群本身已有数据,那么重新启动时设置的--raft_cluster没有作用; detail BootstrapCluster函数
 
