@@ -250,3 +250,12 @@ SnapshotInterval 快照间隔 检测一次 && log db 增量条数 > SnapshotThre
 
 ```
 
+- 7、快照复制时、会不会接受日志
+
+```
+1、replicateTo
+2、sendLatestSnapshot
+3、InstallSnapshot
+会一直阻塞者
+```
+
