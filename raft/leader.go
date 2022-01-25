@@ -210,7 +210,7 @@ func (r *Raft) leaderLoop() {
 
 			// Process the group
 			if len(groupReady) != 0 {
-				r.processLogs(lastIdxInGroup, groupFutures)
+				r.processLogs(lastIdxInGroup, groupFutures) // 拿到需要确认的 LogFutures
 
 				for _, e := range groupReady {
 					r.leaderState.inflight.Remove(e)
@@ -399,10 +399,7 @@ func (r *Raft) leadershipTransfer(id ServerID, address ServerAddress, repl *foll
 
 func (r *Raft) setupLeaderState() {
 	r.leaderState.commitCh = make(chan struct{}, 1)
-	r.leaderState.commitment = newCommitment(r.leaderState.commitCh,
-		r.configurations.latest,
-		r.getLastIndex()+1, // 这个任期内，最早提交的index
-	)
+	r.leaderState.commitment = newCommitment(r.leaderState.commitCh, r.configurations.latest, r.getLastIndex()+1) // 这个任期内，最早提交的index
 	r.leaderState.inflight = list.New()
 	r.leaderState.replState = make(map[ServerID]*followerReplication)
 	r.leaderState.notify = make(map[*verifyFuture]struct{})

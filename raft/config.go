@@ -138,7 +138,7 @@ func DefaultConfig() *Config {
 		ProtocolVersion:    ProtocolVersionMax,      // 3
 		HeartbeatTimeout:   1000 * time.Millisecond, // 1s
 		ElectionTimeout:    1000 * time.Millisecond, // 1s
-		CommitTimeout:      50 * time.Millisecond,   // 50ms
+		CommitTimeout:      1000 * time.Second,   // 50ms   in order to test
 		MaxAppendEntries:   64,
 		ShutdownOnRemove:   true,
 		TrailingLogs:       10240,

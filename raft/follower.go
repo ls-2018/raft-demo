@@ -10,7 +10,7 @@ func (r *Raft) runFollower() {
 
 	for r.getState() == Follower {
 		select {
-		case rpc := <-r.rpcCh:
+		case rpc := <-r.rpcCh: //  ✅
 			r.processRPC(rpc)
 		//-----------------------------------
 		// 拒绝任何操作，当不是leader

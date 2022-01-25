@@ -132,8 +132,7 @@ key: 99,value :&{Index:99 Term:2 Type:LogCommand Data:[115 101 116 44 97 43 57 5
 
 ```azure
 rpcAppendEntries
-rpcRequestVote
-rpcInstallSnapshot
+rpcRequestVote rpcInstallSnapshot
 rpcTimeoutNow
 ```
 
@@ -152,12 +151,12 @@ TimeoutNowRequest
 
 ```azure
 req := &RequestVoteRequest{
-		RPCHeader:          r.getRPCHeader(),   // 只有协议版本
-		Term:               r.getCurrentTerm(), // 当前任期
-		Candidate:          r.trans.EncodePeer(r.localID, r.localAddr), // 竞选者，其实就是localAddr
-		LastLogIndex:       lastIdx,// 最新的日志索引
-		LastLogTerm:        lastTerm,// 当前的任期
-		LeadershipTransfer: r.candidateFromLeadershipTransfer, // 在这为false
+RPCHeader: r.getRPCHeader(),   // 只有协议版本
+Term: r.getCurrentTerm(), // 当前任期
+Candidate: r.trans.EncodePeer(r.localID, r.localAddr), // 竞选者，其实就是localAddr
+LastLogIndex: lastIdx,// 最新的日志索引
+LastLogTerm: lastTerm,// 当前的任期
+LeadershipTransfer: r.candidateFromLeadershipTransfer, // 在这为false
 }
 RequestVote(本机的逻辑ID, 本机的通信地址, req, &resp.RequestVoteResponse)
 ```
@@ -213,3 +212,25 @@ SnapshotInterval 快照间隔 检测一次 && log db 增量条数 > SnapshotThre
 
 ```
 
+### 一条消息提交之后的流程
+
+- 1、Apply(cmd []byte, timeout time.Duration) ApplyFuture
+    - case r.applyCh <- logFuture:
+    - case newLog := <-r.applyCh:
+    - r.dispatchLogs(ready)                                          更新了lastIndex
+        - asyncNotifyCh(f.triggerCh)                                   触发每个follower的写操作
+        - case <-s.triggerCh:
+        - shouldStop = r.replicateTo(f, lastLogIdx)
+            - r.trans.AppendEntries(peer.ID, peer.Address, &req, &resp); follower会更新commit
+            - updateLastAppended(f, &req)              follower写成功会触发
+                - f.commitment.match(f.peer.ID, last.Index)                r.leaderState.commitment
+                    - c.recalculate()                                        判断leader是否commit
+    - asyncNotifyCh(c.commitCh)                                      newCommitment(r.leaderState.commitCh
+    - case <-r.leaderState.commitCh:                                 更新commitIndex
+    - r.processLogs(lastIdxInGroup, groupFutures)
+    - applyBatch(batch)
+    - case ptr := <-r.fsmMutateCh
+    - commitBatch(req)                                               存储到FSM
+
+
+- 2、ApplyFuture.Error()等待 

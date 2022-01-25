@@ -93,11 +93,11 @@ func (c *commitment) recalculate() {
 		matched = append(matched, idx)
 	}
 	sort.Sort(uint64Slice(matched))
-	quorumMatchIndex := matched[(len(matched)-1)/2]
-	// 日志索引的中间数
+	//比方说 当前提交的日志索引2 在某时刻 各节点的索引 c:1 a:2 b:2   -->  a
+	// a:1 b:2 c:2 d:2  -->b
+	quorumMatchIndex := matched[(len(matched)-1)/2] // 大多数日志索引的中间数
 
 	// 提交数小于中间数 且 中间数>= leader任期开始时的索引数
-	// TODO 说明：一个日志落后的node成为了leader
 	if quorumMatchIndex > c.commitIndex && quorumMatchIndex >= c.startIndex {
 		c.commitIndex = quorumMatchIndex
 		asyncNotifyCh(c.commitCh)

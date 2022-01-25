@@ -156,12 +156,12 @@ func (r *Raft) processLogs(index uint64, futures map[uint64]*logFuture) {
 
 	batch := make([]*commitTuple, 0, maxAppendEntries)
 
-	// Apply all the preceding logs
+	// 应用上述所有日志
 	for idx := lastApplied + 1; idx <= index; idx++ {
 		var preparedLog *commitTuple
-		// Get the log, either from the future or from our log store
+		// 获取日志,待确认的
 		future, futureOk := futures[idx]
-		if futureOk {
+		if futureOk {//存在
 			preparedLog = r.prepareLog(&future.log, future)
 		} else {
 			l := new(Log)
@@ -178,7 +178,7 @@ func (r *Raft) processLogs(index uint64, futures map[uint64]*logFuture) {
 			// The FSM thread will respond to the future.
 			batch = append(batch, preparedLog)
 
-			// If we have filled up a batch, send it to the FSM
+			//如果我们填满了一批，发送给FSM
 			if len(batch) >= maxAppendEntries {
 				applyBatch(batch)
 				batch = make([]*commitTuple, 0, maxAppendEntries)
