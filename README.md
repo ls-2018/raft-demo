@@ -30,6 +30,30 @@
 
 注：这里7. commit log 应该是在5. commit之后，但是因为commit策略的原因有一定延迟，所以从日志上看是在回复客户端以后
 
+### 一条消息提交之后的流程
+
+```- 1、Apply(cmd []byte, timeout time.Duration) ApplyFuture
+    - case r.applyCh <- logFuture:
+    - case newLog := <-r.applyCh:
+    - r.dispatchLogs(ready)                                                 更新了lastIndex
+        - asyncNotifyCh(f.triggerCh)                                        触发每个follower的写操作
+        - case <-s.triggerCh:
+        - shouldStop = r.replicateTo(f, lastLogIdx)
+            - r.trans.AppendEntries(peer.ID, peer.Address, &req, &resp);    follower会更新commit
+            - updateLastAppended(f, &req)                                   follower写成功会触发
+                - f.commitment.match(f.peer.ID, last.Index)                 r.leaderState.commitment
+                    - c.recalculate()                                       判断leader是否commit
+    - asyncNotifyCh(c.commitCh)                                             newCommitment(r.leaderState.commitCh
+    - case <-r.leaderState.commitCh:                                        更新commitIndex
+    - r.processLogs(lastIdxInGroup, groupFutures)
+    - applyBatch(batch)
+    - case ptr := <-r.fsmMutateCh
+    - commitBatch(req)                                                      存储到FSM
+
+
+- 2、ApplyFuture.Error()等待 
+```
+
 ### 四、Raft协议动画演示
 
 * Raft系统运行可视化1 [http://thesecretlivesofdata.com/raft](http://thesecretlivesofdata.com/raft/)
@@ -65,22 +89,21 @@
 
 ##### 选举变化相关
 
-1. 集群启动后，follower等待一个随机election timeout时间变成candidate，然后发起投票，如果不能获得majority票数，则任期term会一直增加（未pre-vote情况）(branch:
-   election-1)
+1. 集群启动后，follower等待一个随机election timeout时间变成candidate，然后发起投票，如果不能获得majority票数，则任期term会一直增加（未pre-vote情况）
 
-2. 集群启动后，follower等待一个随机election timeout时间变成candidate，然后发起投票，获得majority票数的节点变成leader (branch: election-2)
+2. 集群启动后，follower等待一个随机election timeout时间变成candidate，然后发起投票，获得majority票数的节点变成leader
 
-3. leader选举成功后发送heartbeat保持leader的地位(branch: election-3)
+3. leader选举成功后发送heartbeat保持leader的地位
 
-4. leader失去majority节点的heartbeat响应，退回到follower(branch: election-4)
+4. leader失去majority节点的heartbeat响应，退回到follower
 
 ##### 日志复制相关
 
-1. leader接收客户端请求，向集群内所有节点发送复制RPC，所有都正常响应 -> 正常commit，然后apply到状态机，最后返回客户端处理成功(branch: replicate-log-1)
+1. leader接收客户端请求，向集群内所有节点发送复制RPC，所有都正常响应 -> 正常commit，然后apply到状态机，最后返回客户端处理成功
 
-2. leader接收客户端请求，向集群内所有节点发送复制RPC，majority正常响应 -> 正常commit，然后apply到状态机，最后返回客户端处理成功(branch: replicate-log-2)
+2. leader接收客户端请求，向集群内所有节点发送复制RPC，majority正常响应 -> 正常commit，然后apply到状态机，最后返回客户端处理成功
 
-3. leader接收客户端请求，向集群内所有节点发送复制RPC，少于majority正常响应 -> 不能commit(branch: replicate-log-3)
+3. leader接收客户端请求，向集群内所有节点发送复制RPC，少于majority正常响应 -> 不能commit
 
 ### 八、收获
 
@@ -212,25 +235,4 @@ SnapshotInterval 快照间隔 检测一次 && log db 增量条数 > SnapshotThre
 
 ```
 
-### 一条消息提交之后的流程
 
-```- 1、Apply(cmd []byte, timeout time.Duration) ApplyFuture
-    - case r.applyCh <- logFuture:
-    - case newLog := <-r.applyCh:
-    - r.dispatchLogs(ready)                                                 更新了lastIndex
-        - asyncNotifyCh(f.triggerCh)                                        触发每个follower的写操作
-        - case <-s.triggerCh:
-        - shouldStop = r.replicateTo(f, lastLogIdx)
-            - r.trans.AppendEntries(peer.ID, peer.Address, &req, &resp);    follower会更新commit
-            - updateLastAppended(f, &req)                                   follower写成功会触发
-                - f.commitment.match(f.peer.ID, last.Index)                 r.leaderState.commitment
-                    - c.recalculate()                                       判断leader是否commit
-    - asyncNotifyCh(c.commitCh)                                             newCommitment(r.leaderState.commitCh
-    - case <-r.leaderState.commitCh:                                        更新commitIndex
-    - r.processLogs(lastIdxInGroup, groupFutures)
-    - applyBatch(batch)
-    - case ptr := <-r.fsmMutateCh
-    - commitBatch(req)                                                      存储到FSM
-
-
-- 2、ApplyFuture.Error()等待 ```
