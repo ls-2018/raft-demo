@@ -222,7 +222,7 @@ SnapshotInterval 快照间隔 检测一次 && log db 增量条数 > SnapshotThre
         - case <-s.triggerCh:
         - shouldStop = r.replicateTo(f, lastLogIdx)
             - r.trans.AppendEntries(peer.ID, peer.Address, &req, &resp);    follower会更新commit
-            - updateLastAppended(f, &req)              follower写成功会触发
+            - updateLastAppended(f, &req)                                   follower写成功会触发
                 - f.commitment.match(f.peer.ID, last.Index)                 r.leaderState.commitment
                     - c.recalculate()                                       判断leader是否commit
     - asyncNotifyCh(c.commitCh)                                             newCommitment(r.leaderState.commitCh
