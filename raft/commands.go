@@ -20,6 +20,7 @@ type AppendEntriesRequest struct {
 	Leader []byte
 
 	// 从leader角度出发,从follower看,xx日志已写入leader，但是follower没有，xx对follower来说就是pre
+	// 当前要复制的日志项，前面一条日志项的索引值和任期编号
 	PrevLogEntry uint64 // 同步过来的一批的日志的第一个日志索引
 	PrevLogTerm  uint64
 

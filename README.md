@@ -238,7 +238,14 @@ SnapshotInterval 快照间隔 检测一次 && log db 增量条数 > SnapshotThre
 - 5、latestIndex、commitIndex、applyIndex的区别
 
 ```
-
+	// 最大被提交的日志项的索引值
+	commitIndex uint64
+	// 最新被应用到状态机的日志项的索引值
+	lastApplied uint64
+	// 存储中最新的日志项的索引值和任期编号
+	lastLogIndex uint64
+	lastLogTerm  uint64
+	applyIndex<=commitIndex<=latestIndex
 ```
 - 6、集群节点变更
 ```
@@ -258,4 +265,6 @@ SnapshotInterval 快照间隔 检测一次 && log db 增量条数 > SnapshotThre
 3、InstallSnapshot
 会一直阻塞者
 ```
-
+PrevLogTerm：表示当前要复制的日志项，前面一条日志项的任期编号。
+PrevLogEntry：表示当前要复制的日志项，前面一条日志项的索引值。
+// 领导者节点上的已提交的日志项的最大索引值

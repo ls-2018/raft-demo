@@ -34,9 +34,9 @@ func (s State) String() string {
 type raftState struct {
 	// 当前任期
 	currentTerm uint64
-	// commit的  最高的日志条目
+	// 最大被提交的日志项的索引值
 	commitIndex uint64
-	// 上一次apply to fsm 的index
+	// 最新被应用到状态机的日志项的索引值
 	lastApplied uint64
 
 	// protects 4 next fields
@@ -46,7 +46,7 @@ type raftState struct {
 	lastSnapshotIndex uint64
 	lastSnapshotTerm  uint64
 
-	// 缓存 LogStore 最新的日志索引数据
+	// 存储中最新的日志项的索引值和任期编号
 	lastLogIndex uint64
 	lastLogTerm  uint64
 
